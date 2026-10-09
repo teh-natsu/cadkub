@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-2fa36a">
-  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-11553a">
+  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-0f8a55">
+  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-3fcf86">
   <img alt="Agent-drivable over MCP" src="https://img.shields.io/badge/agents-MCP-2f7fd6">
   <img alt="No account, no telemetry" src="https://img.shields.io/badge/no%20account-no%20telemetry-e8692d">
 </p>

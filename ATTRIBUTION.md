@@ -23,7 +23,7 @@ Generated-in-code assets are original and have no file to list:
 
 | Asset | Author | Source | Licence | Notes |
 |---|---|---|---|---|
-| `assets/app-icon/cadkub.svg` | Nattpol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | CadKub app icon master (red panda holding a blueprint) |
+| `assets/app-icon/cadkub.svg` | Nattpol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | CadKub app icon master (red panda with a drafted part on a card, on green glass) |
 | `assets/app-icon/cadkub-small.svg` | Nattpol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | simpler variant for 24 px and below |
 | `assets/app-icon/hicolor/scalable/apps/io.github.teh_natsu.cadkub.svg` | Nattpol Chaisri (CadKub owner) | copy of `assets/app-icon/cadkub.svg` | MIT OR Apache-2.0 | Linux hicolor icon |
 | `assets/app-icon/hicolor/16x16/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
