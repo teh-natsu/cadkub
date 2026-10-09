@@ -309,7 +309,7 @@ fn entity(kind: &str, tags: &[Tag]) -> Option<(Common, EntityKind)> {
     Some((c, k))
 }
 
-/// An ACAD_TABLE entity: sizes, cell texts and merges (DXF Reference), plus CADCraft's
+/// An ACAD_TABLE entity: sizes, cell texts and merges (DXF Reference), plus CadKub's
 /// title/header flags, text height and style name from xdata when present.
 fn acad_table(tags: &[Tag]) -> Table {
     const MAX_CELLS: usize = 1_000_000;
@@ -1012,7 +1012,7 @@ impl Objects {
                 d.parametric = p;
             }
         }
-        // Standard associativity, for dimensions without CADCraft's exact links.
+        // Standard associativity, for dimensions without CadKub's exact links.
         for tags in &self.dimassocs {
             dimassoc(d, tags);
         }
@@ -1058,7 +1058,7 @@ fn dimassoc(d: &mut Drawing, tags: &[Tag]) {
     }
 }
 
-/// A CADCraft snap from a DIMASSOC object snap type and point.
+/// A CadKub snap from a DIMASSOC object snap type and point.
 fn infer_snap(d: &Drawing, osnap: i64, main: Handle, other: Option<Handle>, at: Vec2) -> Option<AssocSnap> {
     let e = d.entity(main)?;
     Some(match osnap {

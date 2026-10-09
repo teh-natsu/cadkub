@@ -90,34 +90,19 @@ fn dsettings(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
 }
 
 fn about(ctx: &egui::Context, open: &mut bool) {
+    // CadKub's About shows the app, its version and fonts and the "based on CADCraft" credit; the
+    // Contributors and Models credits (crate::credits) stay for upstream merges.
     let t = Tokens::get();
-    let tab_id = egui::Id::new("about_tab");
-    egui::Window::new("About CADCraft").open(open).default_size(vec2(640.0, 420.0)).collapsible(false).show(ctx, |ui| {
-        let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
-        ui.horizontal(|ui| {
-            for (i, l) in ["About", "Contributors", "Models"].iter().enumerate() {
-                if ui.selectable_label(tab == i as u8, *l).clicked() {
-                    tab = i as u8;
-                }
-            }
-        });
-        ui.data_mut(|d| d.insert_temp(tab_id, tab));
-        ui.separator();
-        match tab {
-            1 => crate::credits::contributors_ui(ui),
-            2 => crate::credits::models_ui(ui),
-            _ => {
-                ui.heading("CADCraft");
-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                ui.label("Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.");
-                ui.add_space(6.0);
-                ui.label(RichText::new("One of the Crafting Apps by the ArtCraft team and community.").color(t.text_dim));
-                ui.hyperlink_to("getartcraft.com/apps/cadcraft", "https://getartcraft.com/apps/cadcraft");
-                ui.hyperlink_to("Join us on Discord", "https://discord.gg/artcraft");
-                ui.add_space(6.0);
-                ui.label(RichText::new("MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.").small().color(t.text_faint));
-            }
-        }
+    egui::Window::new("About CadKub").open(open).default_size(vec2(480.0, 220.0)).collapsible(false).show(ctx, |ui| {
+        ui.heading("CadKub");
+        ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+        ui.label("Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.");
+        ui.add_space(6.0);
+        ui.label(RichText::new("UI: egui · Fonts: Anuphan (OFL) for Thai · Icons: original").small().color(t.text_dim));
+        ui.add_space(12.0);
+        ui.label(RichText::new("Based on CADCraft by the ArtCraft team.").color(t.text_dim));
+        ui.add_space(6.0);
+        ui.label(RichText::new("MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.").small().color(t.text_faint));
     });
 }
 

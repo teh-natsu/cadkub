@@ -117,7 +117,7 @@ pub(crate) fn save_to(s: &mut Session, path: &str) -> Result<usize> {
     let bytes = (hooks.write)(s.doc()?, path).map_err(|e| bad("save", e))?;
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let tmp = format!("{path}.cadcraft-tmp");
+        let tmp = format!("{path}.cadkub-tmp");
         std::fs::write(&tmp, &bytes).map_err(|e| bad("save", format!("{path}: {e}")))?;
         std::fs::rename(&tmp, path).map_err(|e| bad("save", format!("{path}: {e}")))?;
     }

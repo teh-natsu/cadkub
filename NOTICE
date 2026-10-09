@@ -1,11 +1,12 @@
-CADCraft
-Copyright (c) 2026 ArtCraft Team and the CADCraft contributors.
-Licensed under the MIT License or the Apache License, Version 2.0, at your option
-(LICENSE-MIT, LICENSE-APACHE).
+CadKub
+Copyright (c) 2026 Nattpol Chaisri and the CadKub contributors.
 
-The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
-not open source and are not covered by the license above; their terms are in
-docs/brand/LICENSE-brand.txt.
+CadKub is based on CADCraft (https://github.com/storytold/cadcraft),
+Copyright (c) 2026 ArtCraft Team and the CADCraft contributors.
+
+Both are licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE). CadKub is not made, sponsored or endorsed by the ArtCraft Team,
+and it contains none of the ArtCraft name, wordmark or logos.
 
 Third-party material
 
@@ -15,10 +16,12 @@ Mozilla Public License 2.0 and is used unmodified as a separate library (crates/
 is available from crates.io and the repository above.
 
 
-None: every bundled asset is original to CADCraft (icons, drafting font, hatch patterns and
-linetypes are drawn or defined in code). The per-file list is in ATTRIBUTION.md. Builds made with
+Anuphan (assets/fonts/Anuphan-Regular.ttf), Copyright 2019 The Anuphan Project Authors, a static
+instance of the variable font — SIL Open Font License 1.1. See assets/fonts/OFL-Anuphan.txt.
+Every other bundled asset is original to CADCraft and CadKub (icons, drafting font, hatch patterns
+and linetypes are drawn or defined in code). The per-file list is in ATTRIBUTION.md. Builds made with
 the optional craft-fonts input (CRAFT_FONTS_DIR) embed the fonts listed in its ATTRIBUTION.md,
 each under the SIL Open Font License 1.1.
 
-CADCraft is an independent project and is not affiliated with, sponsored by or endorsed by
+CadKub is an independent project and is not affiliated with, sponsored by or endorsed by
 Autodesk, Inc. AutoCAD and DWG are trademarks of Autodesk, Inc.

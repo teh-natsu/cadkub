@@ -533,33 +533,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "cadcraft"
-version = "0.3.0"
-dependencies = [
- "cadcraft-engine",
- "cadcraft-io",
- "cadcraft-ui-egui",
- "eframe",
- "egui",
- "log",
- "muda",
- "rfd",
- "serde_json",
- "winresource",
-]
-
-[[package]]
-name = "cadcraft-cli"
-version = "0.3.0"
-dependencies = [
- "cadcraft-engine",
- "cadcraft-io",
- "cadcraft-mcp",
- "cadcraft-render",
- "serde_json",
-]
-
-[[package]]
 name = "cadcraft-color"
 version = "0.3.0"
 dependencies = [
@@ -692,7 +665,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadcraft-web"
+name = "cadkub"
+version = "0.3.0"
+dependencies = [
+ "cadcraft-engine",
+ "cadcraft-io",
+ "cadcraft-ui-egui",
+ "eframe",
+ "egui",
+ "log",
+ "muda",
+ "rfd",
+ "serde_json",
+ "winresource",
+]
+
+[[package]]
+name = "cadkub-cli"
+version = "0.3.0"
+dependencies = [
+ "cadcraft-engine",
+ "cadcraft-io",
+ "cadcraft-mcp",
+ "cadcraft-render",
+ "serde_json",
+]
+
+[[package]]
+name = "cadkub-web"
 version = "0.3.0"
 dependencies = [
  "cadcraft-engine",

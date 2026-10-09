@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=CadKub
+GenericName=Computer-Aided Design
+Comment=Draft, dimension and plot 2D drawings; open DXF and DWG files
+Exec=cadkub %F
+TryExec=cadkub
+Icon=io.github.teh_natsu.cadkub
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.github.teh_natsu.cadkub
+Categories=Graphics;Engineering;VectorGraphics;
+MimeType=image/vnd.dxf;image/vnd.dwg;application/x-dxf;application/acad;
+Keywords=cad;drafting;dxf;dwg;drawing;engineering;architecture;mechanical;

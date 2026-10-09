@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CadKub MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by package.ps1:
+
+    wix build cadkub.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
+
+  Per-machine install into Program Files, a Start Menu shortcut, and CadKub offered under
+  "Open with" for .dxf and .dwg drawings (without taking over the user's default app).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="CadKub"
+      Manufacturer="Nattpol Chaisri"
+      Version="$(var.Version)"
+      UpgradeCode="F1D01258-BEB4-4A36-AADB-45971B7C565F"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="CadKub computer-aided design" Manufacturer="Nattpol Chaisri" />
+    <!-- Same-version upgrades let successive pre-releases of one X.Y.Z replace each other
+         (MSI versions are numeric, so 1.2.3-rc.1 and 1.2.3-rc.2 are both 1.2.3). -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of CadKub is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="CadkubIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="CadkubIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/teh-natsu/cadkub" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/teh-natsu/cadkub/releases" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/teh-natsu/cadkub/issues" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="CadKub" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="CadKub" Level="1">
+      <ComponentGroupRef Id="CadkubFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="CadkubFiles" Directory="INSTALLFOLDER">
+      <Component Id="CadkubApp" Guid="879C1274-9B51-427D-88F6-84F2192D648A">
+        <File Id="CadkubExe" Source="$(var.BinDir)\cadkub.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="CadKub"
+              Description="CadKub computer-aided design" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
+              Icon="CadkubIcon.ico" IconIndex="0" />
+        </File>
+
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\cadkub.exe" Value="[#CadkubExe]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\cadkub.exe\shell\open\command" Value="&quot;[#CadkubExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.dxf\OpenWithProgids" Name="CadKub.Drawing" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.dwg\OpenWithProgids" Name="CadKub.Drawing" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\CadKub.Drawing\shell\open\command" Value="&quot;[#CadkubExe]&quot; &quot;%1&quot;" Type="string" />
+      </Component>
+
+      <Component Id="CadkubCli">
+        <File Id="CadkubCliExe" Source="$(var.BinDir)\cadkub-cli.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

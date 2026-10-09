@@ -1,5 +1,5 @@
 //! Design tokens. Colours were measured from the reference look (dark slate chrome, near-black
-//! navy model space) and are CADCraft's own values; every widget reads them from here.
+//! navy model space) and are CadKub's own values; every widget reads them from here.
 
 use egui::{Color32, FontFamily, FontId, Visuals};
 
@@ -86,8 +86,15 @@ pub fn mono() -> FontId {
     FontId::new(12.0, FontFamily::Monospace)
 }
 
-/// Load a system UI font at run time when one is installed (not bundled), else keep egui's.
+/// Load a system UI font at run time when one is installed (not bundled), else keep egui's; Anuphan
+/// (bundled) follows it in every family for Thai text, which neither has.
 pub fn install_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(font_definitions());
+}
+
+pub(crate) fn font_definitions() -> egui::FontDefinitions {
+    use std::sync::Arc;
+    let mut fonts = egui::FontDefinitions::default();
     #[cfg(not(target_arch = "wasm32"))]
     {
         let candidates: &[&str] = if cfg!(target_os = "macos") {
@@ -102,20 +109,23 @@ pub fn install_fonts(ctx: &egui::Context) {
                 "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
             ]
         };
-        let mut fonts = egui::FontDefinitions::default();
         for path in candidates {
             if let Ok(bytes) = std::fs::read(path) {
-                fonts.font_data.insert("system-ui".into(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
+                fonts.font_data.insert("system-ui".into(), Arc::new(egui::FontData::from_owned(bytes)));
                 if let Some(f) = fonts.families.get_mut(&FontFamily::Proportional) {
                     f.insert(0, "system-ui".into());
                 }
                 break;
             }
         }
-        ctx.set_fonts(fonts);
     }
-    #[cfg(target_arch = "wasm32")]
-    let _ = ctx;
+    // Thai: right after the first face of every family, ahead of egui's emoji and symbol fallbacks.
+    fonts.font_data.insert("Anuphan".into(), Arc::new(egui::FontData::from_static(include_bytes!("../../../assets/fonts/Anuphan-Regular.ttf"))));
+    for family in fonts.families.values_mut() {
+        let at = family.len().min(1);
+        family.insert(at, "Anuphan".into());
+    }
+    fonts
 }
 
 pub fn apply(ctx: &egui::Context) {
@@ -151,4 +161,27 @@ pub fn apply(ctx: &egui::Context) {
         s.text_styles.insert(egui::TextStyle::Small, small());
         s.text_styles.insert(egui::TextStyle::Monospace, mono());
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FontFamily, FontId};
+
+    /// Thai text (layer and block names, typed text, file names) paints with Anuphan in every family.
+    #[test]
+    fn thai_text_is_paintable() {
+        const THAI: &str = "ผังพื้นชั้นสองที่ไม่ใช่กล่อง";
+        let defs = super::font_definitions();
+        let ctx = egui::Context::default();
+        ctx.set_fonts(defs);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        ctx.fonts_mut(|fonts| {
+            for family in [FontFamily::Proportional, FontFamily::Monospace] {
+                let font = FontId::new(13.0, family.clone());
+                let missing: String = THAI.chars().filter(|ch| !fonts.has_glyph(&font, *ch)).collect();
+                assert!(missing.is_empty(), "{family:?} lacks {missing}");
+            }
+        });
+    }
 }

@@ -1,6 +1,6 @@
-# CADCraft control protocol
+# CadKub control protocol
 
-Start the desktop app with `--control PORT` (or `CADCRAFT_CONTROL_PORT=PORT`). It listens on
+Start the desktop app with `--control PORT` (or `CADKUB_CONTROL_PORT=PORT`). It listens on
 `127.0.0.1:PORT` for JSON lines: one request per line, one reply per line.
 
 ```json
@@ -30,5 +30,5 @@ Errors come back as `{"id": …, "ok": false, "error": "message"}`.
 | `ui.render` | `{path?, width?, height?}` | Headless render of the current view of the drawing. |
 | `app.open` / `app.save` / `app.quit` | `{path}` | File operations. |
 
-The MCP server (`cadcraft-cli mcp --connect 127.0.0.1:PORT`) wraps this protocol; headless
-(`cadcraft-cli mcp`) it serves the same methods from an in-process session.
+The MCP server (`cadkub-cli mcp --connect 127.0.0.1:PORT`) wraps this protocol; headless
+(`cadkub-cli mcp`) it serves the same methods from an in-process session.

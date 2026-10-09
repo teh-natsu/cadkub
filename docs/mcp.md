@@ -1,22 +1,22 @@
-# CADCraft and AI agents (MCP)
+# CadKub and AI agents (MCP)
 
-CADCraft speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio.
+CadKub speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio.
 
 ## Start it
 
 ```sh
 # Headless: an in-process drawing session, no window.
-cadcraft-cli mcp
+cadkub-cli mcp
 
 # Bridged to the running app (watch the agent draw):
-cadcraft --control 7979 &
-cadcraft-cli mcp --connect 127.0.0.1:7979
+cadkub --control 7979 &
+cadkub-cli mcp --connect 127.0.0.1:7979
 ```
 
 Example client configuration (Claude Code / Claude Desktop):
 
 ```json
-{ "mcpServers": { "cadcraft": { "command": "cadcraft-cli", "args": ["mcp"] } } }
+{ "mcpServers": { "cadkub": { "command": "cadkub-cli", "args": ["mcp"] } } }
 ```
 
 ## Tools
@@ -33,7 +33,7 @@ Example client configuration (Claude Code / Claude Desktop):
 | `new_drawing {metric?}`, `open {path}`, `save {path?}`, `cancel` | Files and Escape. |
 | `screenshot`, `ui_inspect`, `ui_click {x, y}` | Only when connected to the app. |
 
-Resources: `cadcraft://drawing` (inspect JSON) and `cadcraft://commands` (catalog).
+Resources: `cadkub://drawing` (inspect JSON) and `cadkub://commands` (catalog).
 
 ## A typical session
 

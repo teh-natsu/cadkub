@@ -1,4 +1,4 @@
-//! CADCraft parametric solver.
+//! CadKub parametric solver.
 //!
 //! Maps constrained lines, arcs, circles, points and polyline vertices to a parameter vector
 //! ([`model`]), turns each [`Constraint`] into residual equations ([`residual`]), and drives the

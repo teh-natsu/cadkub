@@ -902,7 +902,7 @@ fn arrow_block_entities(kind: cadcraft_render::Arrowhead) -> Vec<Entity> {
 
 /// Standard DIMASSOC point references of an associative dimension: the extension-line
 /// origins of linear/aligned dimensions and the feature point of ordinate dimensions, linked
-/// to objects that exist. CADCraft's exact links travel in xdata as well.
+/// to objects that exist. CadKub's exact links travel in xdata as well.
 fn std_assoc_refs(d: &Drawing, dm: &Dimension) -> (i64, Vec<OsnapRef>) {
     let slots: &[&str] = match dm.kind {
         DimKind::Linear { .. } | DimKind::Aligned => &["p13", "p14"],
@@ -1189,7 +1189,7 @@ pub fn write(d: &Drawing) -> String {
         w.f(50, s.oblique.to_degrees());
         w.i(71, if s.backwards { 2 } else { 0 } | if s.upside_down { 4 } else { 0 });
         w.f(42, 0.2);
-        w.s(3, if s.font == cadcraft_fonts_name() { "txt" } else { s.font.as_str() });
+        w.s(3, if s.font == cadkub_fonts_name() { "txt" } else { s.font.as_str() });
         w.s(4, &s.big_font);
         if s.annotative {
             annotative_xdata(&mut w);
@@ -1374,7 +1374,7 @@ pub fn write(d: &Drawing) -> String {
     for (s, (_, h)) in table_styles.iter().zip(&cx.table_styles) {
         table_style_obj(&mut w, s, h, &table_style_dict);
     }
-    // Parametric constraints and parameters (CADCraft data).
+    // Parametric constraints and parameters (CadKub data).
     if let Some(chunks) = &constraint_chunks {
         w.s(0, "XRECORD");
         w.s(5, constraints_xrec.clone());
@@ -1539,6 +1539,6 @@ fn table_style_obj(w: &mut W, s: &TableStyle, h: &str, dict: &str) {
     }
 }
 
-fn cadcraft_fonts_name() -> &'static str {
-    "CADCraft Stroke"
+fn cadkub_fonts_name() -> &'static str {
+    "CadKub Stroke"
 }

@@ -1,4 +1,4 @@
-//! The CADCraft egui front end.
+//! The CadKub egui front end.
 //!
 //! A thin shell over [`cadcraft_engine::Session`]: panels read engine state and act through
 //! commands (`app.run(id, params)`) or the command line (`app.cmdline(text)`). Nothing here owns

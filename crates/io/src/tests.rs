@@ -558,7 +558,7 @@ fn dimension_associativity_roundtrips() {
     assert_eq!(back.model.len(), d.model.len());
     assert!(back.layouts.iter().all(|l| l.entities.is_empty()));
 
-    // Without CADCraft's xdata (a file from another writer), the standard DIMASSOC objects
+    // Without CadKub's xdata (a file from another writer), the standard DIMASSOC objects
     // still give the extension-line links.
     let tags = cadcraft_dxf::parse(text.as_bytes()).unwrap();
     let mut stripped = Vec::new();
@@ -579,7 +579,7 @@ fn dimension_associativity_roundtrips() {
     assert_eq!(fa.len(), 2);
     assert_eq!(fa[1], ali.assoc[1]);
     assert!(matches!(fa[0].snap, AssocSnap::OnCircle { angle } if angle.abs() < 1e-9));
-    assert!(assoc_of(&foreign, hr).is_empty(), "radial links are CADCraft-only");
+    assert!(assoc_of(&foreign, hr).is_empty(), "radial links are CadKub-only");
 }
 
 fn parametric_sample(d: &mut Drawing) -> (Vec<Constraint>, Parametric) {
@@ -803,7 +803,7 @@ fn extension_sample() -> Drawing {
 fn extension_sample_roundtrips_and_can_be_exported() {
     let d = extension_sample();
     let text = write_dxf(&d);
-    if let Ok(path) = std::env::var("CADCRAFT_DXF_OUT") {
+    if let Ok(path) = std::env::var("CADKUB_DXF_OUT") {
         std::fs::write(path, &text).unwrap();
     }
     let back = read_dxf(text.as_bytes()).unwrap();
