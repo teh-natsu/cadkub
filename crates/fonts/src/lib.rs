@@ -9,6 +9,7 @@
 
 mod mtext;
 mod stroke;
+pub mod thai;
 pub mod ttf;
 
 use std::sync::Arc;
@@ -80,6 +81,11 @@ pub fn char_advance(c: char) -> f64 {
 
 /// Lay out a single line at `height`, with `width_factor` and `oblique` (radians).
 pub fn layout_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Run {
+    layout_chars(&decode_controls(s), height, width_factor, oblique)
+}
+
+/// [`layout_line`] for decoded characters.
+fn layout_chars(chars: &[(char, bool, bool)], height: f64, width_factor: f64, oblique: f64) -> Run {
     let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
     let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
     let sc = h / stroke::CAP;
@@ -88,7 +94,7 @@ pub fn layout_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Run
     let mut x = 0.0;
     let mut under_start: Option<f64> = None;
     let mut over_start: Option<f64> = None;
-    for (c, under, over) in decode_controls(s) {
+    for &(c, under, over) in chars {
         let adv = char_advance(c) * h * wf;
         match stroke::glyph(c) {
             Some((_, spec)) => {
@@ -142,8 +148,71 @@ pub fn layout_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Run
 
 /// Width of a line without building strokes.
 pub fn line_width(s: &str, height: f64, width_factor: f64) -> f64 {
-    let n: f64 = decode_controls(s).iter().map(|(c, _, _)| char_advance(*c)).sum();
+    chars_width(&decode_controls(s), height, width_factor)
+}
+
+/// [`line_width`] for decoded characters.
+fn chars_width(chars: &[(char, bool, bool)], height: f64, width_factor: f64) -> f64 {
+    let n: f64 = chars.iter().map(|(c, _, _)| char_advance(*c)).sum();
     (n * height * width_factor - stroke::GAP / stroke::CAP * height * width_factor).max(0.0)
+}
+
+/// One line in the stroke font, with Thai runs set in the bundled Thai face (the stroke font has
+/// no Thai letters). Lines without Thai are exactly [`layout_line`].
+fn shape_stroke_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Shaped {
+    let chars = decode_controls(s);
+    if !chars.iter().any(|(c, _, _)| thai::is_thai(*c)) {
+        let run = layout_chars(&chars, height, width_factor, oblique);
+        return Shaped { strokes: run.strokes, glyphs: Vec::new(), width: run.width };
+    }
+    let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
+    let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
+    let shear = oblique.tan().clamp(-10.0, 10.0);
+    let mut out = Shaped::default();
+    let (mut x, mut end) = (0.0, 0.0);
+    for (is_thai, run) in thai::segments(&chars) {
+        if is_thai {
+            let text: String = run.iter().map(|c| c.0).collect();
+            if let Some(t) = thai::shape(thai::THAI_FONT, &text, h, wf, shear, x) {
+                let (_, under, over) = run.first().copied().unwrap_or((' ', false, false));
+                out.glyphs.extend(t.glyphs);
+                out.strokes.extend(decorations(&[(x, x + t.width, under, over)], h));
+                x += t.width;
+                end = x;
+                continue;
+            }
+        }
+        let r = layout_chars(run, h, wf, oblique);
+        out.strokes.extend(r.strokes.into_iter().map(|st| st.into_iter().map(|p| p + Vec2::new(x, 0.0)).collect()));
+        end = x + r.width;
+        x += run.iter().map(|(c, _, _)| char_advance(*c)).sum::<f64>() * h * wf;
+    }
+    out.width = end;
+    out
+}
+
+/// Width of [`shape_stroke_line`].
+fn stroke_text_width(s: &str, height: f64, width_factor: f64) -> f64 {
+    let chars = decode_controls(s);
+    if !chars.iter().any(|(c, _, _)| thai::is_thai(*c)) {
+        return chars_width(&chars, height, width_factor);
+    }
+    let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
+    let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
+    let (mut x, mut end) = (0.0, 0.0);
+    for (is_thai, run) in thai::segments(&chars) {
+        if is_thai {
+            let text: String = run.iter().map(|c| c.0).collect();
+            if let Some(w) = thai::width(thai::THAI_FONT, &text, h, wf) {
+                x += w;
+                end = x;
+                continue;
+            }
+        }
+        end = x + chars_width(run, h, wf);
+        x += run.iter().map(|(c, _, _)| char_advance(*c)).sum::<f64>() * h * wf;
+    }
+    end
 }
 
 /// The font a piece of text is set in: the built-in stroke font or an installed TrueType /
@@ -242,8 +311,7 @@ pub fn shape_line(font: &TextFont, s: &str, height: f64, width_factor: f64, obli
     {
         return sh;
     }
-    let run = layout_line(s, height, width_factor, oblique);
-    Shaped { strokes: run.strokes, glyphs: Vec::new(), width: run.width }
+    shape_stroke_line(s, height, width_factor, oblique)
 }
 
 /// Width of one line in `font`.
@@ -253,7 +321,7 @@ pub fn text_width(font: &TextFont, s: &str, height: f64, width_factor: f64) -> f
     {
         return w;
     }
-    line_width(s, height, width_factor)
+    stroke_text_width(s, height, width_factor)
 }
 
 /// Horizontal / vertical alignment for single-line text (matches DXF 72/73 semantics).
@@ -439,6 +507,24 @@ mod tests {
     }
 
     #[test]
+    fn thai_in_the_stroke_font_uses_the_thai_face() {
+        let font = TextFont::Stroke;
+        let sh = shape_line(&font, "ห้อง A-101", 1.0, 1.0, 0.0);
+        assert_eq!(sh.glyphs.len(), 4, "ห ้ อ ง as outlines");
+        assert!(!sh.strokes.is_empty(), "the Latin part stays in the stroke font");
+        assert!((text_width(&font, "ห้อง A-101", 1.0, 1.0) - sh.width).abs() < 1e-9);
+        // The Latin part starts after the Thai word.
+        let thai_right = sh.glyphs.iter().flatten().flatten().map(|p| p.x).fold(f64::MIN, f64::max);
+        let latin_left = sh.strokes.iter().flatten().map(|p| p.x).fold(f64::MAX, f64::min);
+        assert!(latin_left > thai_right, "{latin_left} > {thai_right}");
+        // Lines without Thai are unchanged.
+        assert_eq!(shape_line(&font, "A-101", 1.0, 1.0, 0.0).strokes, layout_line("A-101", 1.0, 1.0, 0.0).strokes);
+        // Hostile input stays bounded: an over-long Thai run falls back to missing-glyph boxes.
+        let long = "ก".repeat(5_000);
+        assert!(shape_line(&font, &long, 1.0, 1.0, 0.0).glyphs.is_empty());
+    }
+
+    #[test]
     fn fit_spans_both_points() {
         let (_, bb) = place_text("ABC", Vec2::ZERO, Some(Vec2::new(10.0, 0.0)), 1.0, 0.0, 1.0, 0.0, Align::Fit, VAlign::Baseline);
         assert!((bb.width() - 10.0).abs() < 1e-6);
@@ -459,6 +545,20 @@ mod ttf_tests {
         assert!(run.width > 1.5 && run.width < 4.0, "width {}", run.width);
         let maxy = run.strokes.iter().flatten().map(|p| p.y).fold(f64::MIN, f64::max);
         assert!((maxy - 1.0).abs() < 0.1, "cap height ~ text height, got {maxy}");
+    }
+
+    #[test]
+    fn thai_in_a_font_without_thai_uses_the_thai_face() {
+        // Skips cleanly when none of these Latin-only system fonts is installed.
+        let Some(bytes) = ["Arial", "Helvetica", "DejaVuSans", "Verdana"].iter().find_map(|n| crate::ttf::find(n)) else {
+            return;
+        };
+        if crate::thai::face(&bytes, "ไทย").as_ptr() != crate::thai::THAI_FONT.as_ptr() {
+            return; // this system's copy has Thai letters of its own
+        }
+        let sh = crate::ttf::shape(&bytes, "ไทย AB", 1.0, 1.0, 0.0).unwrap_or_default();
+        assert_eq!(sh.glyphs.len(), 5, "three Thai letters from the Thai face, then A and B");
+        assert!((crate::ttf::width(&bytes, "ไทย AB", 1.0, 1.0).unwrap_or_default() - sh.width).abs() < 1e-9);
     }
 
     #[test]

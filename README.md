@@ -37,7 +37,9 @@
 - **เร็วและเป็นโปรแกรมจริง:** Rust กับ egui ไม่มี Electron ไม่มี web view
 - **ให้ AI agent ควบคุมได้:** ทุกเมนู เครื่องมือ และพรอมต์เป็นคำสั่ง ผ่าน MCP ช่องควบคุม JSON หรือ CLI
 - **เป็นของคุณ:** ฟรี ไม่ต้องสมัครบัญชี ไม่มีค่าสมาชิก
-- **แสดงภาษาไทยได้:** หน้าจอแสดงชื่อเลเยอร์ บล็อก และชื่อไฟล์ภาษาไทยด้วยฟอนต์ Anuphan
+- **ภาษาไทยทั้งหน้าจอและในแบบ:** หน้าจอแสดงชื่อเลเยอร์ บล็อก และชื่อไฟล์ภาษาไทยด้วยฟอนต์ Anuphan
+  ส่วนข้อความ TEXT, MTEXT, มิติ และตารางในแบบ ถ้าฟอนต์ของ text style ไม่มีอักษรไทย (เช่นฟอนต์เส้นเดี่ยวหรือ Arial)
+  จะใช้ฟอนต์ Sarabun แทนเฉพาะส่วนที่เป็นภาษาไทย และจัดสระบน/ล่างกับวรรณยุกต์ให้ซ้อนถูกตำแหน่ง ส่งออก PNG, SVG และพล็อต PDF ได้ตามที่เห็น
 
 ไฟล์ DXF ที่ CadKub บันทึกยังใช้ชื่อแอป `CADCRAFT` ในข้อมูลเสริม (xdata, constraint และตัวแปร header) เหมือนต้นฉบับ
 จึงเปิดสลับกับ CADCraft ได้โดยไม่เสียข้อมูลมิติแบบ associative และ constraint
@@ -132,7 +134,7 @@ Copyright (c) 2026 Nattpol Chaisri and the CadKub contributors
 Copyright (c) 2026 ArtCraft Team and the CADCraft contributors ข้อความที่ต้องแสดงอยู่ใน [NOTICE](NOTICE)
 
 ไอคอนใน UI ฟอนต์เขียนแบบเส้นเดี่ยว ลายแรเงา และ linetype ทั้งหมดเป็นงานต้นฉบับที่วาดหรือนิยามในโค้ด
-ฟอนต์ Anuphan และ asset อื่น ๆ ใช้สัญญาอนุญาตแบบเปิดของแต่ละชิ้น รายการพร้อมผู้สร้างและแหล่งที่มาอยู่ใน [ATTRIBUTION.md](ATTRIBUTION.md)
+ฟอนต์ Anuphan, Sarabun และ asset อื่น ๆ ใช้สัญญาอนุญาตแบบเปิดของแต่ละชิ้น รายการพร้อมผู้สร้างและแหล่งที่มาอยู่ใน [ATTRIBUTION.md](ATTRIBUTION.md)
 ไอคอนโปรแกรมสร้างด้วย [packaging/make_icon.py](packaging/make_icon.py) และ [packaging/icons.sh](packaging/icons.sh)
 
 <sub>Autodesk, AutoCAD and DWG are trademarks or registered trademarks of Autodesk, Inc. in the United States and/or other countries. CadKub is an independent, open-source project and is not affiliated with, sponsored by or endorsed by Autodesk, Inc.; these names are used only to describe the workflows and file formats it is compatible with.</sub>

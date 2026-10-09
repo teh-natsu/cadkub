@@ -18,6 +18,8 @@ is available from crates.io and the repository above.
 
 Anuphan (assets/fonts/Anuphan-Regular.ttf), Copyright 2019 The Anuphan Project Authors, a static
 instance of the variable font — SIL Open Font License 1.1. See assets/fonts/OFL-Anuphan.txt.
+Sarabun (assets/fonts/Sarabun-Regular.ttf), Copyright 2018 The Sarabun Project Authors, the Thai
+face for text in drawings — SIL Open Font License 1.1. See assets/fonts/OFL-Sarabun.txt.
 Every other bundled asset is original to CADCraft and CadKub (icons, drafting font, hatch patterns
 and linetypes are drawn or defined in code). The per-file list is in ATTRIBUTION.md. Builds made with
 the optional craft-fonts input (CRAFT_FONTS_DIR) embed the fonts listed in its ATTRIBUTION.md,

@@ -596,6 +596,7 @@ name = "cadcraft-fonts"
 version = "0.3.0"
 dependencies = [
  "cadcraft-geom",
+ "harfrust",
  "skrifa 0.47.0",
 ]
 

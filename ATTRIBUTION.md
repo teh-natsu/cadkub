@@ -8,7 +8,8 @@ an asset file is missing from this table.
 artwork, fonts, hatch patterns, linetypes, templates or presets.** Every asset is original work by
 CADCraft contributors or third-party material under an open licence (OSI open source, public domain
 / CC0, or Creative Commons that allows redistribution). Screenshots of Autodesk software are never
-committed. Font files are not added here (Anuphan, the UI font for Thai, is the one exception):
+committed. Font files are not added here (Anuphan, the UI font for Thai, and Sarabun, the Thai face for text in
+drawings, are the exceptions):
 shared fonts live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), an optional
 build input.
 
@@ -40,6 +41,8 @@ Generated-in-code assets are original and have no file to list:
 | `assets/app-icon/cadkub-1024.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 |  |
 | `assets/app-icon/cadkub-macos-512.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | macOS margin variant |
 | `assets/fonts/Anuphan-Regular.ttf` | The Anuphan Project Authors (Cadson Demak) | https://github.com/google/fonts/tree/main/ofl/anuphan (`Anuphan[wght].ttf`, version 3.002) | SIL Open Font License 1.1 (`assets/fonts/OFL-Anuphan.txt`) | static Regular instance of the variable font, made with fontTools; the UI font for Thai |
+| `assets/fonts/Sarabun-Regular.ttf` | The Sarabun Project Authors (Cadson Demak) | https://github.com/google/fonts/tree/main/ofl/sarabun | SIL Open Font License 1.1 (`assets/fonts/OFL-Sarabun.txt`) | none; sets Thai text in drawings when the text style's font has no Thai letters (`crates/fonts/src/thai.rs`) |
+| `assets/fonts/OFL-Sarabun.txt` | The Sarabun Project Authors | https://github.com/google/fonts/tree/main/ofl/sarabun | SIL Open Font License 1.1 | licence text |
 | `assets/fonts/OFL-Anuphan.txt` | The Anuphan Project Authors | https://github.com/google/fonts/tree/main/ofl/anuphan | SIL Open Font License 1.1 | licence text |
 | `examples/apartment.dxf` | CADCraft contributors | sample drawing made with cadkub-cli commands | MIT OR Apache-2.0 | Original |
 | `docs/images/ui-apartment.png` | CADCraft contributors | screenshot of CadKub itself (examples/apartment.dxf) | MIT OR Apache-2.0 | Original; no Autodesk UI |
