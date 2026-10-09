@@ -93,7 +93,7 @@ Copy-Item (Join-Path $Bin 'cadkub.exe'), (Join-Path $Bin 'cadkub-cli.exe') $Stag
 # ---- MSI ---------------------------------------------------------------------------------------
 $Msi = Join-Path $Dist "cadkub-$Version-windows-$Arch.msi"
 Invoke-Native 'wix build' {
-  wix build (Join-Path $PSScriptRoot 'cadkub.wxs') -arch $Arch `
+  wix build (Join-Path $PSScriptRoot 'cadkub.wxs') (Join-Path $PSScriptRoot 'installer-ui.wxs') -arch $Arch `
     -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\cadkub.ico')" `
     -o $Msi
 }

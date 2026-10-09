@@ -2,9 +2,10 @@
 <!--
   CadKub MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by package.ps1:
 
-    wix build cadkub.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
+    wix build cadkub.wxs installer-ui.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
 
-  Per-machine install into Program Files, a Start Menu shortcut, and CadKub offered under
+  Per-machine install into Program Files, a Start Menu shortcut, a desktop shortcut (on by default,
+  optional), and CadKub offered under
   "Open with" for .dxf and .dwg drawings (without taking over the user's default app).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
@@ -28,11 +29,17 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/teh-natsu/cadkub" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/teh-natsu/cadkub/releases" />
     <Property Id="ARPHELPLINK" Value="https://github.com/teh-natsu/cadkub/issues" />
+    <!-- Desktop shortcut: on by default, a checkbox in the full-UI welcome dialog, and
+         INSTALLDESKTOPSHORTCUT=0 on the msiexec command line for unattended installs. Secure, so the
+         choice made in the (unelevated) UI reaches the elevated install. -->
+    <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <UIRef Id="CadkubInstallerUI" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="CadKub" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
 
     <Feature Id="Main" Title="CadKub" Level="1">
       <ComponentGroupRef Id="CadkubFiles" />
@@ -53,6 +60,13 @@
         <RegistryValue Root="HKLM" Key="Software\Classes\.dxf\OpenWithProgids" Name="CadKub.Drawing" Value="" Type="string" />
         <RegistryValue Root="HKLM" Key="Software\Classes\.dwg\OpenWithProgids" Name="CadKub.Drawing" Value="" Type="string" />
         <RegistryValue Root="HKLM" Key="Software\Classes\CadKub.Drawing\shell\open\command" Value="&quot;[#CadkubExe]&quot; &quot;%1&quot;" Type="string" />
+      </Component>
+
+      <Component Id="CadkubDesktopShortcut" Directory="DesktopFolder" Guid="355F21E1-14B1-42F8-B99B-2F6897942A3A"
+          Condition="INSTALLDESKTOPSHORTCUT = 1">
+        <Shortcut Id="DesktopShortcut" Name="CadKub" Description="CadKub computer-aided design"
+            Target="[#CadkubExe]" WorkingDirectory="INSTALLFOLDER" Icon="CadkubIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKLM" Key="Software\CadKub\Shortcuts" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
       <Component Id="CadkubCli">
