@@ -1,6 +1,6 @@
 """Build the CadKub app icon SVGs: the master (cadkub.svg) and the small-size variant (cadkub-small.svg).
 
-A red panda peeks over the top of a blueprint and holds it with both paws, on a graphite tile.
+A red panda peeks over the top of a blueprint and holds it with both paws, on a green tile.
 The blueprint shows a drafted part: a bolt circle with centre marks and a dimension line, on a
 faint grid. Everything is plain SVG shapes, so no font or external artwork is needed.
 
@@ -10,7 +10,7 @@ import sys
 
 OUT_DIR = sys.argv[1]
 
-TILE_TOP, TILE_BOTTOM = "#4a515c", "#1c1f24"
+TILE_TOP, TILE_BOTTOM = "#2fa36a", "#11553a"
 FUR_TOP, FUR_BOTTOM = "#e8692d", "#bb4015"
 FUR_DARK = "#6b2410"  # tear marks, inner ears
 PAW = "#3a1a10"
