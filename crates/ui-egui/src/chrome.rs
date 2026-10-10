@@ -1,36 +1,41 @@
 //! Window chrome: title and tool bar, file tabs, status bar and the Start page.
 
-use egui::{Color32, Rect, Sense, Stroke, pos2, vec2};
+use egui::{Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
 use crate::CadApp;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 
-const TOOLBAR: &[&[(Icon, &str, &str)]] = &[
+const TOOLBAR: &[&[(Icon, &str, &str, Option<&str>)]] = &[
     &[
-        (Icon::New, "new", "New Drawing (⌘N)"),
-        (Icon::Open, "open", "Open (⌘O)"),
-        (Icon::Save, "qsave", "Save (⌘S)"),
-        (Icon::SaveAs, "saveas", "Save As"),
+        (Icon::New, "new", "New Drawing", Some("Cmd+N")),
+        (Icon::Open, "open", "Open", Some("Cmd+O")),
+        (Icon::Save, "qsave", "Save", Some("Cmd+S")),
+        (Icon::SaveAs, "saveas", "Save As", None),
     ],
-    &[(Icon::Undo, "undo", "Undo (⌘Z)"), (Icon::Redo, "redo", "Redo (⇧⌘Z)")],
+    &[(Icon::Undo, "undo", "Undo", Some("Cmd+Z")), (Icon::Redo, "redo", "Redo", Some("Cmd+Shift+Z"))],
     &[
-        (Icon::Plot, "plot", "Print"),
-        (Icon::Publish, "publish", "Batch Publish"),
-        (Icon::PageSetup, "pagesetup", "Page Setup Manager"),
-        (Icon::Preview, "preview", "Plot Preview"),
+        (Icon::Plot, "plot", "Print", None),
+        (Icon::Publish, "publish", "Batch Publish", None),
+        (Icon::PageSetup, "pagesetup", "Page Setup Manager", None),
+        (Icon::Preview, "preview", "Plot Preview", None),
     ],
-    &[(Icon::Import, "import", "Import"), (Icon::Export, "export", "Export"), (Icon::Attach, "attach", "Attach"), (Icon::Share, "share", "Share")],
-    &[(Icon::ZoomWindow, "zoom.window", "Zoom Window"), (Icon::Pan, "pan", "Pan"), (Icon::Orbit, "3dorbit", "Orbit")],
     &[
-        (Icon::ZoomExtents, "zoom.extents", "Zoom Extents"),
-        (Icon::Properties, "ui.toggle.palettes", "Properties"),
-        (Icon::Layers, "ui.dialog.layers", "Layer Properties Manager"),
-        (Icon::Blocks, "ui.dialog.blocks", "Blocks"),
+        (Icon::Import, "import", "Import", None),
+        (Icon::Export, "export", "Export", None),
+        (Icon::Attach, "attach", "Attach", None),
+        (Icon::Share, "share", "Share", None),
     ],
-    &[(Icon::Measure, "dist", "Measure Distance"), (Icon::List, "list", "List"), (Icon::Area, "area", "Area")],
-    &[(Icon::Help, "ui.dialog.about", "Help")],
+    &[(Icon::ZoomWindow, "zoom.window", "Zoom Window", None), (Icon::Pan, "pan", "Pan", None), (Icon::Orbit, "3dorbit", "Orbit", None)],
+    &[
+        (Icon::ZoomExtents, "zoom.extents", "Zoom Extents", None),
+        (Icon::Properties, "ui.toggle.palettes", "Properties", None),
+        (Icon::Layers, "ui.dialog.layers", "Layer Properties Manager", None),
+        (Icon::Blocks, "ui.dialog.blocks", "Blocks", None),
+    ],
+    &[(Icon::Measure, "dist", "Measure Distance", None), (Icon::List, "list", "List", None), (Icon::Area, "area", "Area", None)],
+    &[(Icon::Help, "ui.dialog.about", "Help", None)],
 ];
 
 /// Title row (with the integrated macOS title bar) and the Tool Bar.
@@ -68,15 +73,20 @@ pub fn title_and_toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             let mut x = r.left() + if app.integrated_titlebar { 120.0 } else { 12.0 };
             let size = 26.0;
             let mut clicked = None;
+            let mac = ui.ctx().os().is_mac();
             for group in TOOLBAR {
-                for (icon, cmd, tip) in group.iter() {
+                for (icon, cmd, label, shortcut) in group.iter() {
                     let br = Rect::from_min_size(pos2(x, row.center().y - size / 2.0), vec2(size, size));
                     let resp = ui.interact(br, ui.id().with(("tb", *cmd)), Sense::click());
                     if resp.hovered() {
                         ui.painter().rect_filled(br, 3.0, t.control_hover.gamma_multiply(0.6));
                     }
                     icons::paint(ui.painter(), br.shrink(4.0), *icon, false);
-                    if resp.on_hover_text(*tip).clicked() {
+                    let tip = match shortcut {
+                        Some(sc) => format!("{label} ({})", crate::menus::shortcut_label(sc, mac)),
+                        None => (*label).to_string(),
+                    };
+                    if resp.on_hover_text(tip).clicked() {
                         clicked = Some(*cmd);
                     }
                     x += size + 6.0;
@@ -166,7 +176,7 @@ pub fn file_tabs(app: &mut CadApp, ui: &mut egui::Ui) {
             app.ui.start_tab = false;
         }
         if let Some(i) = close {
-            let _ = app.run("close", json!({ "index": i }));
+            app.request_close(Some(i));
         }
     });
 }
@@ -178,6 +188,13 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
         let r = ui.max_rect();
         let p = ui.painter().clone();
         let mut x = r.left() + 8.0;
+        // Clear the status message on time even when no input arrives (the app only repaints on input).
+        if let Some((_, at)) = &app.status
+            && crate::now_ms() - at < 5000.0
+        {
+            let left = std::time::Duration::try_from_secs_f64((5000.0 - (crate::now_ms() - at)) / 1000.0).unwrap_or_default();
+            ui.ctx().request_repaint_after(left);
+        }
         for (icon, tip) in [(Icon::Plus, "New layout"), (Icon::Menu, "Layout list")] {
             let br = Rect::from_min_size(pos2(x, r.top() + 4.0), vec2(18.0, 18.0));
             let resp = ui.interact(br, ui.id().with(("sb", tip)), Sense::click());
@@ -309,7 +326,7 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
         if let Some((msg, at)) = &app.status
             && crate::now_ms() - at < 5000.0
         {
-            p.text(pos2(x + 20.0, r.center().y), egui::Align2::LEFT_CENTER, msg, crate::theme::small(), Color32::from_rgb(0xff, 0xd0, 0x80));
+            p.text(pos2(x + 20.0, r.center().y), egui::Align2::LEFT_CENTER, msg, crate::theme::small(), t.warn);
         }
     });
 }

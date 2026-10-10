@@ -12,7 +12,9 @@
   warning when no signing secrets are set).
 
   Needs: Rust (MSVC toolchain + the target), the Windows SDK (rc.exe, signtool.exe),
-  and WiX v5: dotnet tool install --global wix --version 5.0.2
+  and WiX v5 with its UI extension (the setup wizard):
+    dotnet tool install --global wix --version 5.0.2
+    wix extension add -g WixToolset.UI.wixext/5.0.2
 
 .EXAMPLE
   pwsh packaging/windows/package.ps1 -Arch x64
@@ -93,7 +95,7 @@ Copy-Item (Join-Path $Bin 'cadkub.exe'), (Join-Path $Bin 'cadkub-cli.exe') $Stag
 # ---- MSI ---------------------------------------------------------------------------------------
 $Msi = Join-Path $Dist "cadkub-$Version-windows-$Arch.msi"
 Invoke-Native 'wix build' {
-  wix build (Join-Path $PSScriptRoot 'cadkub.wxs') (Join-Path $PSScriptRoot 'installer-ui.wxs') -arch $Arch `
+  wix build (Join-Path $PSScriptRoot 'cadkub.wxs') -arch $Arch -ext WixToolset.UI.wixext `
     -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\cadkub.ico')" `
     -o $Msi
 }

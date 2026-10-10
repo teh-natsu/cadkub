@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  CadKub MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by package.ps1:
+  CadKub MSI (WiX Toolset v5: `dotnet tool install -g wix`, plus the WixUI extension:
+  `wix extension add -g WixToolset.UI.wixext/5.0.2`). Built by package.ps1:
 
-    wix build cadkub.wxs installer-ui.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
+    wix build cadkub.wxs -arch x64 -ext WixToolset.UI.wixext -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
 
-  Per-machine install into Program Files, a Start Menu shortcut, a desktop shortcut (on by default,
-  optional), and CadKub offered under
-  "Open with" for .dxf and .dwg drawings (without taking over the user's default app).
+  Per-machine install into Program Files, a Start Menu shortcut, an optional desktop shortcut, and
+  CadKub offered under "Open with" for .dxf and .dwg drawings (without taking over the user's
+  default app).
+
+  Desktop shortcut: the setup wizard asks (ticked by default, CadKub's choice; upstream leaves it
+  unticked). Silent installs add it too unless told not to: `msiexec /i cadkub.msi /qn
+  DESKTOPSHORTCUT=0`.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
@@ -29,17 +34,29 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/teh-natsu/cadkub" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/teh-natsu/cadkub/releases" />
     <Property Id="ARPHELPLINK" Value="https://github.com/teh-natsu/cadkub/issues" />
-    <!-- Desktop shortcut: on by default, a checkbox in the full-UI welcome dialog, and
-         INSTALLDESKTOPSHORTCUT=0 on the msiexec command line for unattended installs. Secure, so the
-         choice made in the (unelevated) UI reaches the elevated install. -->
-    <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" Secure="yes" />
-    <UIRef Id="CadkubInstallerUI" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="CadKub" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <!-- Per-machine (ALLUSERS=1), so this is the all-users (Public) desktop, like the Start Menu above. -->
     <StandardDirectory Id="DesktopFolder" />
+
+    <!-- "Create a desktop shortcut": 1 by default (CadKub: ticked), cleared when the wizard's box
+         is unticked or DESKTOPSHORTCUT=0 is given. Secure, so the elevated install sees the UI choice. -->
+    <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <!-- The previous install's choice (the shortcut component's HKCU key path, so the installing
+         user's), so upgrades keep the desktop shortcut without asking again. -->
+    <Property Id="PREVIOUSDESKTOPSHORTCUT">
+      <RegistrySearch Id="PreviousDesktopShortcut" Root="HKCU" Key="Software\CadKub"
+          Name="DesktopShortcut" Type="raw" />
+    </Property>
+    <!-- Only when DESKTOPSHORTCUT wasn't given; "first" runs it once (in the UI sequence when there
+         is one), so unticking the box isn't undone by the execute sequence. -->
+    <SetProperty Id="DESKTOPSHORTCUT" Value="1" After="AppSearch" Sequence="first"
+        Condition="NOT DESKTOPSHORTCUT AND PREVIOUSDESKTOPSHORTCUT = &quot;1&quot;" />
+
+    <UIRef Id="CadkubUI" />
 
     <Feature Id="Main" Title="CadKub" Level="1">
       <ComponentGroupRef Id="CadkubFiles" />
@@ -62,16 +79,89 @@
         <RegistryValue Root="HKLM" Key="Software\Classes\CadKub.Drawing\shell\open\command" Value="&quot;[#CadkubExe]&quot; &quot;%1&quot;" Type="string" />
       </Component>
 
-      <Component Id="CadkubDesktopShortcut" Directory="DesktopFolder" Guid="355F21E1-14B1-42F8-B99B-2F6897942A3A"
-          Condition="INSTALLDESKTOPSHORTCUT = 1">
-        <Shortcut Id="DesktopShortcut" Name="CadKub" Description="CadKub computer-aided design"
-            Target="[#CadkubExe]" WorkingDirectory="INSTALLFOLDER" Icon="CadkubIcon.ico" IconIndex="0" />
-        <RegistryValue Root="HKLM" Key="Software\CadKub\Shortcuts" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
-      </Component>
-
       <Component Id="CadkubCli">
         <File Id="CadkubCliExe" Source="$(var.BinDir)\cadkub-cli.exe" KeyPath="yes" />
       </Component>
+
+      <!-- Optional desktop shortcut, removed on uninstall. A non-advertised shortcut needs a registry
+           key path, and one in a profile folder (DesktopFolder, even though ALLUSERS=1 makes it the
+           Public desktop) must be under HKCU (ICE38, ICE43, ICE57). -->
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="C5AF9EE3-3EB6-42F6-9500-799FA912103C"
+          Condition="DESKTOPSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="DesktopShortcut" Name="CadKub" Description="CadKub computer-aided design"
+            Target="[INSTALLFOLDER]cadkub.exe" WorkingDirectory="INSTALLFOLDER" Icon="CadkubIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKCU" Key="Software\CadKub" Name="DesktopShortcut"
+            Value="1" Type="string" KeyPath="yes" />
+      </Component>
     </ComponentGroup>
+  </Fragment>
+
+  <!--
+    Setup wizard: WixUI_InstallDir's flow (WiX v5, ext/UI/wixlib/WixUI_InstallDir.wxs) without the
+    licence and folder pages, plus a Shortcuts page:
+      install:     Welcome > Shortcuts > Ready to install > Progress > Finish
+      maintenance: Maintenance welcome > Repair/Remove > Ready > Progress > Finish
+  -->
+  <Fragment>
+    <UI Id="CadkubUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <Dialog Id="ShortcutsDlg" Width="370" Height="270" Title="!(loc.InstallDirDlg_Title)">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes"
+            Text="Choose where to start [ProductName] from." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes"
+            Text="{\WixUI_Font_Title}Shortcuts" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="StartMenuText" Type="Text" X="20" Y="60" Width="330" Height="15" NoPrefix="yes"
+            Text="[ProductName] will be added to the Start menu." />
+        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="85" Width="330" Height="17"
+            Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
+      </Dialog>
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="ShortcutsDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="ShortcutsDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="ShortcutsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ShortcutsDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <!-- No "Change" in Apps & features: there is a single feature. -->
+      <Property Id="ARPNOMODIFY" Value="1" />
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
   </Fragment>
 </Wix>

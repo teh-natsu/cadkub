@@ -298,6 +298,9 @@ pub struct Session {
     pub last_point: Vec2,
     /// Cursor position in world coordinates (from the UI; used for direct distance entry).
     pub cursor: Vec2,
+    /// The deferred tangent/perpendicular snap under the cursor, if any (from the UI; lets the
+    /// rubber band show the line it resolves to).
+    pub cursor_deferred: Option<snap::Deferred>,
     /// Viewport size in pixels (from the UI; used for zoom and pick apertures).
     pub viewport_px: (f64, f64),
     pub clipboard: Vec<Entity>,
@@ -331,6 +334,7 @@ impl Session {
             last_command: None,
             last_point: Vec2::ZERO,
             cursor: Vec2::ZERO,
+            cursor_deferred: None,
             viewport_px: (1200.0, 800.0),
             clipboard: Vec::new(),
             clipboard_base: Vec2::ZERO,
@@ -528,7 +532,9 @@ impl Session {
                 } else if !r.is_null()
                     && let Some(msg) = r.get("message").and_then(Value::as_str)
                 {
-                    self.echo(msg.to_string());
+                    for l in msg.lines() {
+                        self.echo(l.to_string());
+                    }
                 }
                 Ok(())
             }
@@ -546,6 +552,12 @@ impl Session {
             }
             return Ok(());
         }
+        // A deferred snap is only meaningful where the prompt resolves it; elsewhere it is the
+        // point it was picked at.
+        let input = match input {
+            Input::Deferred(d) if !self.current_prompt().is_some_and(|p| p.deferred) => Input::Point(d.at),
+            other => other,
+        };
         // Generic selection handling during "Select objects:" prompts.
         let input = self.preprocess_selection(input)?;
         match input {
@@ -615,6 +627,12 @@ impl Session {
             }
             None => run.machine.begin(self),
         };
+        // Redraw what the command has added so far (LINE adds a segment per point), not only when it ends.
+        if let Ok(st) = self.state_mut()
+            && !Arc::ptr_eq(&run.before, &st.doc)
+        {
+            st.revision += 1;
+        }
         match step {
             Ok(Step::Continue) => {
                 self.running = Some(run);
@@ -791,7 +809,8 @@ impl Session {
             }
             let mut rest = line;
             loop {
-                let text_prompt = self.current_prompt().is_some_and(|p| p.accept.text && !p.accept.point);
+                // Free text only when the prompt has no keywords; otherwise split so `I 15` reaches the keyword and the value.
+                let text_prompt = self.current_prompt().is_some_and(|p| p.accept.text && !p.accept.point && p.keywords.is_empty());
                 if text_prompt || self.running.is_none() && rest.contains('{') {
                     self.cmdline(rest)?;
                     break;
@@ -844,16 +863,32 @@ impl Session {
 
     // ---------------- picking without a command ----------------
 
+    /// Open a selection window with one corner at `corner`, for press-and-drag selection
+    /// (AutoCAD's PICKDRAG = 2: a drag opens the window wherever it starts, even over an object;
+    /// the next point, where the drag ends, closes it). Only while objects are being selected: no
+    /// command running, or a command asking for objects. Returns whether a window was opened.
+    pub fn begin_window(&mut self, corner: Vec2) -> bool {
+        let during_command = self.running.is_some();
+        if !corner.is_finite() || (during_command && !self.current_prompt().is_some_and(|p| p.accept.select)) {
+            return false;
+        }
+        self.pending_window = Some(PendingWindow { corner, during_command });
+        true
+    }
+
     /// A click with no command running: pick/toggle objects or start a selection window.
+    ///
+    /// PICKADD on (the default): picks add to the selection and Shift removes. PICKADD off: each pick
+    /// replaces the selection and Shift adds (Shift+pick on a selected object removes it).
     pub fn idle_click(&mut self, p: Vec2, shift: bool) -> Result<()> {
         let space = self.space();
+        let pickadd = self.settings.pickadd;
         if let Some(pw) = self.pending_window.take() {
             let crossing = p.x < pw.corner.x;
             let hs = select::select_window(self.doc()?, &space, Bounds2::new(pw.corner, p), crossing);
-            let mut sel = if shift { Vec::new() } else { self.selection() };
-            if shift {
-                let cur = self.selection();
-                sel = cur.into_iter().filter(|h| !hs.contains(h)).collect();
+            let mut sel = if pickadd || shift { self.selection() } else { Vec::new() };
+            if shift && pickadd {
+                sel.retain(|h| !hs.contains(h));
             } else {
                 sel.extend(hs);
             }
@@ -863,10 +898,11 @@ impl Session {
         let ap = self.pixel_size() * self.settings.pickbox.max(1.0) * 1.5;
         match select::pick(self.doc()?, &space, p, ap) {
             Some(h) => {
-                let mut sel = self.selection();
-                if shift {
+                let mut sel = if pickadd || shift { self.selection() } else { Vec::new() };
+                let had = sel.contains(&h);
+                if shift && (pickadd || had) {
                     sel.retain(|x| *x != h);
-                } else if !sel.contains(&h) {
+                } else if !had {
                     sel.push(h);
                 }
                 self.set_selection(sel);

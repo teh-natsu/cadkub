@@ -79,6 +79,9 @@ pub fn apply_hot_grip(app: &mut CadApp, to: Vec2) {
 pub struct CanvasState {
     pub list: Option<DisplayList>,
     key: (u64, u64, i32, bool, usize),
+    /// Bumped whenever `list` is rebuilt (identifies it for [`PrimIndex`]).
+    list_gen: u64,
+    prim_index: PrimIndex,
     /// Set when the app runs on wgpu: entities are drawn by [`crate::gpu`]; otherwise on the CPU.
     pub gpu: Option<crate::gpu::GpuTarget>,
     /// The mesh last handed to the GPU (see [`crate::gpu::CanvasCallback::key`]).
@@ -97,6 +100,9 @@ pub struct CanvasState {
     pub cursor: Option<Vec2>,
     pub polar_angle: Option<f64>,
     pan_last: Option<Pos2>,
+    /// True when the latest scroll came from a trackpad (or other precise-scrolling device):
+    /// scrolling then pans and pinch zooms. A notched mouse wheel clears it so the wheel zooms.
+    scroll_pans: bool,
     /// A hot (clicked) grip being dragged: entity, grip index, grip position, mode.
     pub hot_grip: Option<HotGrip>,
     /// Zoom to extents once the canvas size is known (after opening a drawing).
@@ -106,6 +112,48 @@ pub struct CanvasState {
     hover_at: Option<Pos2>,
     /// Constraint glyphs for the parametric overlay (cached per drawing revision).
     pub param: crate::parametric::Cache,
+    /// A selection window opened by a press-and-drag, to close where the button is let go.
+    drag_window: bool,
+}
+
+/// Primitives of `list` sorted by entity handle, built on the first highlight after each list
+/// rebuild. Highlighting the hovered entity used to scan every primitive on every frame: ~2.5 ms
+/// per frame on a 270k-entity drawing, whether or not anything changed.
+#[derive(Default)]
+struct PrimIndex {
+    list_gen: Option<u64>,
+    by_handle: Vec<(Handle, usize)>,
+}
+
+impl PrimIndex {
+    /// Indices of the primitives drawn for `handles` (in list order).
+    fn prims(&mut self, list_gen: u64, list: &DisplayList, handles: &[Handle]) -> Vec<usize> {
+        if handles.is_empty() {
+            return Vec::new();
+        }
+        if self.list_gen != Some(list_gen) {
+            self.by_handle = list.prims.iter().enumerate().map(|(i, p)| (p.handle, i)).collect();
+            self.by_handle.sort_unstable();
+            self.list_gen = Some(list_gen);
+        }
+        let mut out = Vec::new();
+        for h in handles {
+            let from = self.by_handle.partition_point(|(k, _)| k < h);
+            out.extend(self.by_handle.get(from..).unwrap_or(&[]).iter().take_while(|(k, _)| k == h).map(|(_, i)| *i));
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+/// Indices of the primitives in `list` drawn for `handles` (a scan; for small lists).
+fn prims_of(list: &DisplayList, handles: &[Handle]) -> Vec<usize> {
+    if handles.is_empty() {
+        return Vec::new();
+    }
+    let set: std::collections::HashSet<Handle> = handles.iter().copied().collect();
+    list.prims.iter().enumerate().filter(|(_, pr)| set.contains(&pr.handle)).map(|(i, _)| i).collect()
 }
 
 fn color32(c: Rgb) -> Color32 {
@@ -132,6 +180,7 @@ fn ensure_list(app: &mut CadApp, px: f64) {
     let space = st.space.clone();
     app.canvas.list = Some(cadcraft_render::build(&st.doc, &space, &opts));
     app.canvas.key = key;
+    app.canvas.list_gen = app.canvas.list_gen.wrapping_add(1);
     app.canvas.build_ms = crate::now_ms() - t0;
 }
 
@@ -307,14 +356,11 @@ fn draw_list_gpu(c: &mut CanvasState, p: &egui::Painter, xf: &Xf, bg: Rgb, lwdis
     p.extend(shapes);
 }
 
-/// Draw selected/hovered entities as highlight overlays.
-fn draw_highlight(p: &egui::Painter, xf: &Xf, list: &DisplayList, handles: &[Handle], color: Color32, width: f32, dashed: bool) {
-    if handles.is_empty() {
-        return;
-    }
-    let set: std::collections::HashSet<Handle> = handles.iter().copied().collect();
+/// Draw selected/hovered entities as highlight overlays: `prims` are indices into `list` (from
+/// [`PrimIndex::prims`] or [`prims_of`]).
+fn draw_highlight(p: &egui::Painter, xf: &Xf, list: &DisplayList, prims: &[usize], color: Color32, width: f32, dashed: bool) {
     let mut shapes = Vec::new();
-    for prim in list.prims.iter().filter(|pr| set.contains(&pr.handle)) {
+    for prim in prims.iter().filter_map(|&i| list.prims.get(i)) {
         let pts = list.points(prim);
         match prim.kind {
             Kind::Polyline => {
@@ -418,6 +464,7 @@ fn effective_point(app: &mut CadApp, raw: Vec2, xf: &Xf) -> Vec2 {
     let hot = app.canvas.hot_grip;
     let wants_point = hot.is_some() || prompt.as_ref().is_some_and(|p| p.accept.point && !p.accept.select);
     let base = hot.map(|g| g.base).or_else(|| prompt.as_ref().and_then(|p| p.base));
+    let deferred = hot.is_none() && prompt.as_ref().is_some_and(|p| p.deferred);
     let s = app.session.settings.clone();
     app.canvas.snap = None;
     app.canvas.polar_angle = None;
@@ -426,7 +473,7 @@ fn effective_point(app: &mut CadApp, raw: Vec2, xf: &Xf) -> Vec2 {
     }
     let ap = s.aperture / xf.scale;
     if let Ok(st) = app.session.state()
-        && let Some(hit) = snap::osnap(&st.doc, &st.edit_space(), raw, ap, s.osmode, base)
+        && let Some(hit) = snap::osnap(&st.doc, &st.edit_space(), raw, ap, s.osmode, base, deferred)
     {
         app.canvas.snap = Some(hit);
         return hit.point;
@@ -469,7 +516,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let (hover_pos, scroll, mods, middle_down, pressed_primary, pressed_secondary, dbl_middle, dbl_primary) = ui.input(|i| {
         (
             i.pointer.hover_pos(),
-            i.smooth_scroll_delta.y,
+            i.smooth_scroll_delta,
             i.modifiers,
             i.pointer.middle_down(),
             i.pointer.primary_clicked(),
@@ -479,14 +526,36 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         )
     });
     let inside = hover_pos.is_some_and(|p| rect.contains(p)) && resp.hovered();
-    // Zoom with the wheel about the cursor.
-    if inside
-        && scroll.abs() > 0.0
-        && let Some(hp) = hover_pos
-    {
-        let f = (f64::from(scroll) / 300.0).exp();
-        let about = xf.to_world(hp);
-        let _ = app.session.zoom_about(f, about);
+    // Which device is scrolling? On macOS, trackpads (and Magic Mouse) report precise point
+    // deltas; notched mouse wheels report lines. The answer is sticky because egui spreads a wheel
+    // notch over several frames. Elsewhere (browsers, Wayland smooth-scroll mice) ordinary wheels
+    // also report points, so the wheel keeps zooming there.
+    ui.input(|i| {
+        for e in &i.raw.events {
+            if let egui::Event::MouseWheel { unit, .. } = e {
+                app.canvas.scroll_pans = cfg!(target_os = "macos") && *unit == egui::MouseWheelUnit::Point;
+            }
+        }
+    });
+    if inside && scroll != egui::Vec2::ZERO {
+        if app.canvas.scroll_pans {
+            // Two-finger swipe pans: the drawing follows the fingers, like a middle-drag.
+            // Pinch (and Cmd+scroll) still zoom via `zoom_delta` below.
+            if let Ok(st) = app.session.state_mut() {
+                let v = st.view();
+                st.set_view_quiet(cadcraft_engine::View {
+                    center: v.center - Vec2::new(f64::from(scroll.x) / scale, -f64::from(scroll.y) / scale),
+                    height: v.height,
+                });
+            }
+        } else if scroll.y.abs() > 0.0
+            && let Some(hp) = hover_pos
+        {
+            // Zoom with the mouse wheel about the cursor.
+            let f = (f64::from(scroll.y) / 300.0).exp();
+            let about = xf.to_world(hp);
+            let _ = app.session.zoom_about(f, about);
+        }
     }
     let zoom_pinch = ui.input(|i| i.zoom_delta());
     if inside
@@ -495,7 +564,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     {
         let _ = app.session.zoom_about(f64::from(zoom_pinch), xf.to_world(hp));
     }
-    // Pan with the middle button (or Shift+right-drag / two-finger drag on trackpads is scroll).
+    // Pan with the middle button (trackpads pan with a two-finger swipe, above).
     if middle_down && let Some(hp) = hover_pos {
         if let Some(last) = app.canvas.pan_last {
             let d = hp - last;
@@ -552,9 +621,11 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         let eff = effective_point(app, w, &xf);
         app.canvas.cursor = Some(eff);
         app.session.cursor = eff;
+        app.session.cursor_deferred = app.canvas.snap.and_then(|h| h.deferred);
     } else {
         app.canvas.cursor = None;
         app.canvas.snap = None;
+        app.session.cursor_deferred = None;
     }
 
     // Clicks.
@@ -565,7 +636,9 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     {
         if app.session.running.is_some() {
             app.canvas.hot_grip = None;
-            if let Err(e) = app.session.input(Input::Point(p)) {
+            // A deferred tangent/perpendicular goes to the command as such.
+            let input = app.canvas.snap.filter(|h| h.deferred.is_some()).map_or(Input::Point(p), |h| h.input());
+            if let Err(e) = app.session.input(input) {
                 app.session.echo(e.to_string());
             }
         } else if app.canvas.hot_grip.is_some() {
@@ -575,6 +648,31 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             app.session.echo(g.label());
         } else if let Err(e) = app.session.idle_click(raw_world.unwrap_or(p), mods.shift) {
             app.session.echo(e.to_string());
+        }
+    }
+    // Press-and-drag selection window (AutoCAD's PICKDRAG = 2; click-click still works): a drag
+    // that starts while objects are being selected opens a window where the button went down,
+    // and letting go closes it. Drags on grips and drags while drawing are left alone.
+    if resp.drag_started_by(egui::PointerButton::Primary)
+        && !middle_down
+        && app.canvas.hot_grip.is_none()
+        && app.session.pending_window.is_none()
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        && rect.contains(origin)
+        && grip_at(app, &xf, Some(origin)).is_none()
+    {
+        app.canvas.drag_window = app.session.begin_window(xf.to_world(origin));
+    }
+    if app.canvas.drag_window && resp.drag_stopped_by(egui::PointerButton::Primary) {
+        app.canvas.drag_window = false;
+        if app.session.pending_window.is_some()
+            && let Some(end) = ui.input(|i| i.pointer.interact_pos())
+        {
+            let end = xf.to_world(end);
+            let done = if app.session.running.is_some() { app.session.input(Input::Point(end)) } else { app.session.idle_click(end, mods.shift) };
+            if let Err(e) = done {
+                app.session.echo(e.to_string());
+            }
         }
     }
     if inside && pressed_secondary {
@@ -653,18 +751,18 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
                 if let Some(h) = app.canvas.hover
                     && !sel.contains(&h)
                 {
-                    draw_highlight(&clipped, &xf, &list, &[h], t.hover, 2.0, false);
+                    draw_highlight(&clipped, &xf, &list, &prims_of(&list, &[h]), t.hover, 2.0, false);
                 }
-                draw_highlight(&clipped, &xf, &list, &sel, t.selection, 1.5, true);
+                draw_highlight(&clipped, &xf, &list, &prims_of(&list, &sel), t.selection, 1.5, true);
             }
         }
-    } else if let Some(list) = &app.canvas.list {
-        if let Some(h) = app.canvas.hover
+    } else if let CanvasState { list: Some(list), list_gen, prim_index, hover, .. } = &mut app.canvas {
+        if let Some(h) = *hover
             && !sel.contains(&h)
         {
-            draw_highlight(&painter, &xf, list, &[h], t.hover, 2.0, false);
+            draw_highlight(&painter, &xf, list, &prim_index.prims(*list_gen, list, &[h]), t.hover, 2.0, false);
         }
-        draw_highlight(&painter, &xf, list, &sel, t.selection, 1.5, true);
+        draw_highlight(&painter, &xf, list, &prim_index.prims(*list_gen, list, &sel), t.selection, 1.5, true);
     }
     app.canvas.draw_ms = crate::now_ms() - t0;
     // Constraint bars and dynamic dimensional constraints (model space, or inside a viewport).
@@ -732,7 +830,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             );
             draw_list(&painter, &xf, &list, bg, false);
         }
-        painter.extend(Shape::dashed_line(&[xf.to_screen(g.base), xf.to_screen(c)], Stroke::new(1.0, t.text_dim), 4.0, 3.0));
+        painter.extend(Shape::dashed_line(&[xf.to_screen(g.base), xf.to_screen(c)], Stroke::new(1.0, t.canvas_ink), 4.0, 3.0));
     }
     // Rubber band preview of the active command.
     if let (Some(c), true) = (app.canvas.cursor, app.session.running.is_some()) {
@@ -777,6 +875,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     // UCS icon, ViewCube and viewport label.
     if app.ui.show_ucs_icon {
         draw_ucs_icon(&painter, rect);
+        crate::viewcube::ucs_icon(app, ui, rect);
     }
     if app.ui.show_viewcube && sheet.is_none() {
         draw_viewcube(app, ui, rect);
@@ -798,10 +897,9 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             dynamic_input(app, &painter, hp);
         }
     }
-    // Keep animating during interaction.
-    if inside {
-        ui.ctx().request_repaint();
-    }
+    // No continuous repaint while hovering: input events repaint by themselves. Repainting every
+    // frame kept a vsync swapchain's queue full (every frame waited behind queued ones) and would
+    // spin the CPU with the low-latency present mode (`gpu::surface_config`).
 }
 
 fn tooltip(p: &egui::Painter, at: Pos2, text: &str) {
@@ -856,46 +954,31 @@ fn dynamic_input(app: &CadApp, p: &egui::Painter, at: Pos2) {
 fn draw_ucs_icon(p: &egui::Painter, rect: Rect) {
     let t = Tokens::get();
     let o = pos2(rect.left() + 36.0, rect.bottom() - 34.0);
-    let st = Stroke::new(1.0, t.text_dim);
+    let st = Stroke::new(1.0, t.canvas_ink);
     p.line_segment([o, o + vec2(60.0, 0.0)], st);
     p.line_segment([o, o + vec2(0.0, -60.0)], st);
     p.rect_stroke(Rect::from_center_size(o, vec2(9.0, 9.0)), 0.0, st, egui::StrokeKind::Middle);
     let f = egui::FontId::proportional(13.0);
-    p.text(o + vec2(70.0, 0.0), egui::Align2::LEFT_CENTER, "X", f.clone(), t.text_dim);
-    p.text(o + vec2(0.0, -70.0), egui::Align2::CENTER_BOTTOM, "Y", f, t.text_dim);
+    p.text(o + vec2(70.0, 0.0), egui::Align2::LEFT_CENTER, "X", f.clone(), t.canvas_ink);
+    p.text(o + vec2(0.0, -70.0), egui::Align2::CENTER_BOTTOM, "Y", f, t.canvas_ink);
 }
 
 fn viewport_label(p: &egui::Painter, rect: Rect) {
     let t = Tokens::get();
     let at = pos2(rect.left() + 10.0, rect.top() + 8.0);
-    p.text(at, egui::Align2::LEFT_TOP, "+  |  Top  |  2D Wireframe", crate::theme::small(), t.text_dim);
+    p.text(at, egui::Align2::LEFT_TOP, "+  |  Top  |  2D Wireframe", crate::theme::small(), t.canvas_ink);
 }
 
 fn draw_viewcube(app: &mut CadApp, ui: &mut egui::Ui, rect: Rect) {
     let t = Tokens::get();
-    let c = pos2(rect.right() - 92.0, rect.top() + 82.0);
+    let l = crate::viewcube::Layout::new(rect);
+    let (c, ring) = (l.center, l.ring);
     let p = ui.painter_at(rect);
-    let ring = 58.0;
-    p.circle_stroke(c, ring, Stroke::new(9.0, Color32::from_rgb(0x48, 0x50, 0x5c)));
-    p.circle_stroke(c, ring + 4.5, Stroke::new(1.0, Color32::from_rgb(0x5c, 0x65, 0x72)));
-    let f = egui::FontId::proportional(17.0);
-    let lc = Color32::from_rgb(0xc8, 0xcc, 0xd2);
-    p.text(c + vec2(0.0, -ring - 1.0), egui::Align2::CENTER_CENTER, "N", f.clone(), lc);
-    p.text(c + vec2(0.0, ring + 1.0), egui::Align2::CENTER_CENTER, "S", f.clone(), lc);
-    p.text(c + vec2(ring + 1.0, 0.0), egui::Align2::CENTER_CENTER, "E", f.clone(), lc);
-    p.text(c + vec2(-ring - 1.0, 0.0), egui::Align2::CENTER_CENTER, "W", f, lc);
-    let face = Rect::from_center_size(c, vec2(44.0, 44.0));
-    let resp = ui.interact(face, ui.id().with("viewcube"), Sense::click());
-    p.rect_filled(face, 2.0, if resp.hovered() { Color32::from_rgb(0xb8, 0xbc, 0xc2) } else { Color32::from_rgb(0x9a, 0x9e, 0xa4) });
-    p.rect_stroke(face, 2.0, Stroke::new(1.0, Color32::from_rgb(0x6c, 0x70, 0x76)), egui::StrokeKind::Inside);
-    p.text(c, egui::Align2::CENTER_CENTER, "TOP", egui::FontId::proportional(13.0), Color32::from_rgb(0x50, 0x54, 0x5a));
-    if resp.clicked() {
-        let _ = app.session.zoom_extents();
-    }
+    crate::viewcube::show(app, ui, &l);
     // WCS pill.
     let pill = Rect::from_center_size(c + vec2(0.0, ring + 26.0), vec2(56.0, 16.0));
     p.rect_filled(pill, 8.0, Color32::from_rgb(0x48, 0x50, 0x5c));
-    p.text(pill.center(), egui::Align2::CENTER_CENTER, "WCS ⌄", crate::theme::small(), t.text_dim);
+    p.text(pill.center(), egui::Align2::CENTER_CENTER, "WCS ⌄", crate::theme::small(), t.canvas_ink);
 }
 
 /// The grip of a selected object under the cursor, if any.
@@ -916,4 +999,34 @@ fn grip_at(app: &CadApp, xf: &Xf, hover: Option<Pos2>) -> Option<HotGrip> {
         }
     }
     None
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use cadcraft_render::DPrim;
+
+    fn list(handles: &[u64]) -> DisplayList {
+        let prim = |h| DPrim { handle: Handle(h), color: Rgb(255, 255, 255), lw: 0.0, kind: Kind::Polyline, start: 0, len: 0 };
+        DisplayList { prims: handles.iter().map(|&h| prim(h)).collect(), ..Default::default() }
+    }
+
+    fn hs(v: &[u64]) -> Vec<Handle> {
+        v.iter().map(|&h| Handle(h)).collect()
+    }
+
+    #[test]
+    fn prim_index_matches_a_scan_and_follows_list_rebuilds() {
+        let a = list(&[3, 1, 3, 2, 7, 3]);
+        let mut ix = PrimIndex::default();
+        assert_eq!(ix.prims(1, &a, &hs(&[3])), vec![0, 2, 5]);
+        assert_eq!(ix.prims(1, &a, &hs(&[3])), prims_of(&a, &hs(&[3])));
+        assert_eq!(ix.prims(1, &a, &hs(&[2, 1, 2])), vec![1, 3]);
+        assert!(ix.prims(1, &a, &hs(&[9])).is_empty());
+        assert!(ix.prims(1, &a, &[]).is_empty());
+        // A rebuilt list (new generation) is re-indexed.
+        let b = list(&[3, 9]);
+        assert_eq!(ix.prims(2, &b, &hs(&[9, 3])), vec![0, 1]);
+    }
 }

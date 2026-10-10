@@ -39,7 +39,10 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("status", "Status", run_status).menu(&["Tools", "Inquiry", "Status"]).noundo(),
         CommandSpec::new("drawing.inspect", "Inspect Drawing", run_inspect).params("{entities?: bool, limit?: n}").noundo(),
         CommandSpec::new("entities", "Query Entities", run_entities).params("{type?, layer?, window?: [[x,y],[x,y]], limit?, offset?}").noundo(),
-        CommandSpec::new("count", "Count", run_count).menu(&["Tools", "Count"]).params("{block?}").noundo(),
+        CommandSpec::new("count", "Count", run_count)
+            .menu(&["Tools", "Count"])
+            .params("{block?} → {blocks: {name: n}} | {block, count}, plus a `message` line")
+            .noundo(),
     ]
 }
 
@@ -189,10 +192,20 @@ fn run_area(s: &mut Session, p: &Value) -> Result<Value> {
                 let b = a * el.ratio;
                 (cadcraft_geom::PI * a * b, cadcraft_geom::PI * (3.0 * (a + b) - ((3.0 * a + b) * (a + 3.0 * b)).sqrt()))
             }
-            EntityKind::Hatch(hh) => hh.loops.iter().fold((0.0, 0.0), |acc, l| {
-                let g = Polyline { vertices: l.vertices.clone(), closed: true };
-                (acc.0 + g.area().abs(), acc.1 + g.len())
-            }),
+            EntityKind::Hatch(hh) => {
+                // Odd parity, as drawn: a loop nested inside an odd number of other loops is an unfilled island.
+                let geoms: Vec<Polyline> = hh.loops.iter().map(|l| Polyline { vertices: l.vertices.clone(), closed: true }).collect();
+                let polys: Vec<Vec<Vec2>> = geoms.iter().map(|g| g.tessellate(1e-3)).collect();
+                let mut total = (0.0, 0.0);
+                for (i, g) in geoms.iter().enumerate() {
+                    let probe = polys.get(i).and_then(|p| p.first().copied());
+                    let depth =
+                        probe.map_or(0, |pt| polys.iter().enumerate().filter(|(j, q)| *j != i && cadcraft_geom::point_in_polygon(q, pt)).count());
+                    total.0 += if depth % 2 == 0 { g.area().abs() } else { -g.area().abs() };
+                    total.1 += g.len();
+                }
+                total
+            }
             _ => return Err(bad("area", "object has no area")),
         }
     };
@@ -225,7 +238,7 @@ fn run_status(s: &mut Session, _p: &Value) -> Result<Value> {
 }
 
 fn entity_summary(e: &cadcraft_doc::Entity) -> Value {
-    json!({ "handle": e.handle.hex(), "type": e.kind.type_name(), "layer": e.common.layer, "color": e.common.color.name(), "geometry": e.kind })
+    json!({ "handle": e.handle.hex(), "type": e.kind.type_name(), "layer": e.common.layer, "color": e.common.color.name(), "transparency": super::props::transparency_value(e.common.transparency), "geometry": e.kind })
 }
 
 fn run_inspect(s: &mut Session, p: &Value) -> Result<Value> {
@@ -296,10 +309,22 @@ fn run_count(s: &mut Session, p: &Value) -> Result<Value> {
             *counts.entry(i.block.clone()).or_default() += 1;
         }
     }
+    // `message` is what the command line shows when COUNT is typed or chosen from the menu.
     if let Some(b) = str_param(p, "block") {
-        return Ok(json!({ "block": b, "count": counts.get(b).copied().unwrap_or(0) }));
+        let n = counts.get(b).copied().unwrap_or(0);
+        return Ok(json!({ "block": b, "count": n, "message": format!("Block {b}: {n} in model space.") }));
     }
-    Ok(json!({ "blocks": counts }))
+    let message = if counts.is_empty() {
+        "No block references in model space.".to_string()
+    } else {
+        let mut m = String::from("Block references in model space:");
+        for (name, n) in &counts {
+            m.push_str(&format!("\n  {name}: {n}"));
+        }
+        m.push_str(&format!("\n  Total: {}", counts.values().sum::<usize>()));
+        m
+    };
+    Ok(json!({ "blocks": counts, "message": message }))
 }
 
 #[derive(Default)]

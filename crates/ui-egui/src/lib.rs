@@ -10,6 +10,7 @@
 
 pub mod canvas;
 pub mod chrome;
+pub mod closing;
 pub mod cmdline;
 pub mod control;
 pub mod credits;
@@ -17,11 +18,13 @@ pub mod dialogs;
 pub mod gpu;
 pub mod icons;
 pub mod layers;
+pub mod managers;
 pub mod menus;
 pub mod palettes;
 pub mod parametric;
 pub mod quick;
 pub mod theme;
+pub mod viewcube;
 
 use std::sync::mpsc::Receiver;
 
@@ -30,6 +33,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub use control::{ControlRequest, ControlResponse};
+
+/// The host storage key for [`CadApp::prefs_json`].
+pub const PREFS_KEY: &str = "cadkub.prefs";
 
 /// Persisted UI state (serde, so automation can read and set it).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,6 +59,8 @@ pub struct UiState {
     pub start_tab: bool,
     pub dialog: Option<String>,
     pub history_lines: usize,
+    /// Interface theme: "system" (follow the OS light/dark appearance), "light" or "dark".
+    pub theme: theme::ThemePref,
 }
 
 impl Default for UiState {
@@ -74,6 +82,7 @@ impl Default for UiState {
             start_tab: false,
             dialog: None,
             history_lines: 3,
+            theme: theme::ThemePref::default(),
         }
     }
 }
@@ -98,9 +107,16 @@ pub struct CadApp {
     queued_shots: Vec<(u64, f64, u32)>,
     shot_token: u64,
     pub synthetic: Vec<egui::Event>,
+    /// Caps the frame rate when presenting without vsync (see [`gpu::FrameCap`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub frame_cap: Option<gpu::FrameCap>,
     styled: bool,
+    /// The theme last installed into egui (`None` until the first frame).
+    shown_theme: Option<egui::Theme>,
     pub frame_ms: f64,
     pub quit_requested: bool,
+    /// A close request waiting for "Save changes?" answers ([`closing`]).
+    pub closing: Option<closing::Closing>,
 }
 
 impl CadApp {
@@ -118,9 +134,13 @@ impl CadApp {
             queued_shots: Vec::new(),
             shot_token: 0,
             synthetic: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            frame_cap: None,
             styled: false,
+            shown_theme: None,
             frame_ms: 0.0,
             quit_requested: false,
+            closing: None,
         }
     }
 
@@ -168,12 +188,32 @@ impl CadApp {
     pub fn cmdline(&mut self, text: &str) {
         if self.session.running.is_none() {
             let first = text.split_whitespace().next().unwrap_or("");
-            if !first.is_empty() && menus::run_ui_command(self, &first.to_ascii_lowercase(), &Value::Null).is_some() {
+            // `cmd {json}` is a programmatic call: the engine runs it with those parameters.
+            let json_form = text.trim_start().get(first.len()..).is_some_and(|rest| rest.trim_start().starts_with('{'));
+            if !first.is_empty() && !json_form && menus::run_ui_command(self, &first.to_ascii_lowercase(), &Value::Null).is_some() {
                 return;
             }
         }
         if let Err(e) = self.session.cmdline(text) {
             self.session.echo(e.to_string());
+        }
+    }
+
+    /// The theme the interface shows now (the choice resolved against the OS appearance).
+    pub fn shown_theme(&self) -> egui::Theme {
+        self.shown_theme.unwrap_or_else(|| self.ui.theme.resolve(None))
+    }
+
+    /// Preferences kept across restarts, as JSON for the host's storage ([`PREFS_KEY`]).
+    pub fn prefs_json(&self) -> String {
+        json!({ "theme": self.ui.theme.as_str() }).to_string()
+    }
+
+    /// Restore preferences saved by [`Self::prefs_json`]; unknown or malformed values are ignored.
+    pub fn load_prefs(&mut self, json: &str) {
+        let Ok(v) = serde_json::from_str::<Value>(json) else { return };
+        if let Some(t) = v.get("theme").and_then(Value::as_str).and_then(theme::ThemePref::parse) {
+            self.ui.theme = t;
         }
     }
 
@@ -194,8 +234,15 @@ impl CadApp {
     pub fn logic(&mut self, ctx: &egui::Context) {
         if !self.styled {
             theme::install_fonts(ctx);
-            theme::apply(ctx);
             self.styled = true;
+        }
+        // Resolved every frame, so a System choice follows the OS appearance live (winit and the
+        // browser report changes as input); the saved choice itself never changes here.
+        let shown = self.ui.theme.resolve(ctx.system_theme());
+        theme::set_active(shown);
+        if self.shown_theme != Some(shown) {
+            theme::apply(ctx, shown);
+            self.shown_theme = Some(shown);
         }
         self.drain_control(ctx);
         if !self.synthetic.is_empty() {
@@ -213,8 +260,12 @@ impl CadApp {
         }
     }
 
-    /// Inject synthetic events (one pointer event per frame).
+    /// Wait for the frame cap (if any), then inject synthetic events (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(cap) = &mut self.frame_cap {
+            cap.wait();
+        }
         if self.synthetic.is_empty() {
             return;
         }
@@ -258,6 +309,7 @@ impl CadApp {
             }
         });
         dialogs::show(self, ui.ctx());
+        closing::prompt(self, ui.ctx());
         self.frame_ms = now_ms() - t0;
     }
 
@@ -340,5 +392,66 @@ pub fn now_ms() -> f64 {
     #[cfg(target_arch = "wasm32")]
     {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use theme::{ThemePref, Tokens};
+
+    fn app() -> CadApp {
+        CadApp::new(Session::empty(), Services::default())
+    }
+
+    /// One frame of `logic` with the OS reporting `system` as its appearance.
+    fn frame(app: &mut CadApp, ctx: &egui::Context, system: Option<egui::Theme>) {
+        let raw = egui::RawInput { system_theme: system, ..Default::default() };
+        let mut out = ctx.run_ui(raw, |ui| app.logic(ui.ctx()));
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn theme_choice_persists_and_drives_tokens() {
+        let mut a = app();
+        assert_eq!(a.ui.theme, ThemePref::Dark, "default keeps today's look");
+        assert!(a.run("ui.theme", json!({ "theme": "Purple" })).is_err());
+        assert_eq!(a.run("ui.theme", json!({ "theme": "light" })).ok(), Some(json!({ "theme": "light", "shown": "light" })));
+        // Saved and restored by the host.
+        let mut b = app();
+        b.load_prefs(&a.prefs_json());
+        assert_eq!(b.ui.theme, ThemePref::Light);
+        b.load_prefs("not json");
+        b.load_prefs(r#"{"theme": "sepia"}"#);
+        assert_eq!(b.ui.theme, ThemePref::Light, "bad prefs are ignored");
+        // A fixed choice ignores the OS; the tokens and egui follow the choice.
+        let ctx = egui::Context::default();
+        frame(&mut b, &ctx, Some(egui::Theme::Dark));
+        assert_eq!(Tokens::get(), Tokens::LIGHT);
+        assert_eq!(ctx.theme(), egui::Theme::Light);
+        // The menu items reach the same setting; so does `ui.set` (the UiState JSON).
+        b.start("ui.theme.dark");
+        frame(&mut b, &ctx, Some(egui::Theme::Light));
+        assert_eq!(Tokens::get(), Tokens::DARK);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        let ui: UiState = serde_json::from_value(json!({ "theme": "system" })).unwrap_or_default();
+        assert_eq!(ui.theme, ThemePref::System);
+    }
+
+    #[test]
+    fn system_theme_follows_the_os_live_and_stays_saved_as_system() {
+        let mut a = app();
+        a.start("ui.theme.system");
+        let ctx = egui::Context::default();
+        frame(&mut a, &ctx, Some(egui::Theme::Light));
+        assert_eq!(Tokens::get(), Tokens::LIGHT);
+        assert_eq!(ctx.theme(), egui::Theme::Light);
+        frame(&mut a, &ctx, Some(egui::Theme::Dark));
+        assert_eq!(Tokens::get(), Tokens::DARK);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        frame(&mut a, &ctx, None);
+        assert_eq!(Tokens::get(), Tokens::of(theme::SYSTEM_FALLBACK), "no OS appearance: the documented fallback");
+        assert_eq!(a.ui.theme, ThemePref::System);
+        assert_eq!(a.prefs_json(), r#"{"theme":"system"}"#);
     }
 }

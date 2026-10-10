@@ -1,7 +1,8 @@
 //! DXF data shared by the reader and the writer beyond plain entity geometry:
 //! dimension-variable group codes (DIMSTYLE records and the `ACAD` "DSTYLE" override xdata,
 //! both per the DXF Reference), arrowhead block names, extended-data helpers and the
-//! CadKub-owned payloads (exact associativity, table flags, parametric constraints).
+//! CadKub-owned payloads (exact associativity, table flags, hatch gradients, parametric
+//! constraints).
 //!
 //! CadKub's own data lives under the registered application `CADCRAFT` (xdata) and the
 //! named-object-dictionary entry `CADCRAFT_CONSTRAINTS` (an XRECORD). Other readers keep or
@@ -211,6 +212,36 @@ pub(crate) fn arrow_block_name(name: &str) -> Option<(String, Arrowhead)> {
     Some((if keep { n.to_string() } else { std_name }, kind))
 }
 
+/// Applications whose xdata carries layer properties: transparency and description.
+pub(crate) const LAYER_TRANSPARENCY_APP: &str = "AcCmTransparency";
+pub(crate) const LAYER_DESCRIPTION_APP: &str = "AcAecLayerStandard";
+
+/// A transparency percentage (0..=90) as an `AcCmTransparency` value: the alpha with the
+/// "by alpha" flag (0x02 in the top byte).
+pub(crate) fn transparency_to_dxf(percent: u8) -> i64 {
+    let t = u32::from(percent.min(90));
+    i64::from(0x0200_0000 | ((100 - t) * 255 / 100))
+}
+
+/// The percentage of an `AcCmTransparency` value; `None` unless it is "by alpha".
+pub(crate) fn transparency_from_dxf(v: i64) -> Option<u8> {
+    if (v >> 24) & 0xff != 2 {
+        return None;
+    }
+    let alpha = u32::try_from(v & 0xff).ok()?;
+    let opaque = (alpha * 100 + 127) / 255;
+    u8::try_from(100u32.saturating_sub(opaque).min(90)).ok()
+}
+
+/// An xdata string cut to the 255 bytes a `1000` group may hold, at a character boundary.
+pub(crate) fn xdata_str(s: &str) -> &str {
+    let mut end = s.len().min(255);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.get(..end).unwrap_or_default()
+}
+
 /// The extended data of one application: the groups after its `1001` up to the next `1001`.
 pub(crate) fn xdata<'a>(tags: &'a [Tag], app: &str) -> &'a [Tag] {
     let Some(start) = tags.iter().position(|t| t.code == 1001 && t.str().trim().eq_ignore_ascii_case(app)) else { return &[] };
@@ -304,6 +335,34 @@ pub(crate) fn assoc_xdata(assoc: &[DimAssoc]) -> Vec<Tag> {
     }
     v.push(Tag::s(1002, "}"));
     v
+}
+
+/// An arc-length dimension as CadKub xdata: `1000 ARCLEN`, `1002 {`, the arc centre as an xdata
+/// point (`1010`/`1020`/`1030`), `1002 }`. The record itself stays a standard aligned dimension
+/// (DXF has no arc-length DIMENSION type), so other programs still read it.
+pub(crate) fn arclen_xdata(center: cadcraft_geom::Vec3) -> Vec<Tag> {
+    vec![Tag::s(1000, "ARCLEN"), Tag::s(1002, "{"), Tag::f(1010, center.x), Tag::f(1020, center.y), Tag::f(1030, center.z), Tag::s(1002, "}")]
+}
+
+/// The arc centre written by [`arclen_xdata`]; None for other dimensions and other writers.
+pub(crate) fn read_arclen(tags: &[Tag]) -> Option<cadcraft_geom::Vec3> {
+    let list = xdata_list(xdata(tags, APP), "ARCLEN");
+    let g = |c: i32| list.iter().find(|t| t.code == c).map(Tag::f64).filter(|v| v.is_finite());
+    Some(cadcraft_geom::Vec3::new(g(1010)?, g(1020)?, g(1030).unwrap_or(0.0)))
+}
+
+/// A viewport's frozen layer names as CadKub xdata: `1000 VPFROZEN`, `1002 {`, one `1000` per layer, `1002 }`.
+pub(crate) fn frozen_xdata(layers: &[String]) -> Vec<Tag> {
+    let mut v = vec![Tag::s(1000, "VPFROZEN"), Tag::s(1002, "{")];
+    v.extend(layers.iter().map(|l| Tag::s(1000, l.clone())));
+    v.push(Tag::s(1002, "}"));
+    v
+}
+
+/// The frozen layer names written by [`frozen_xdata`]; empty for files from other writers.
+pub(crate) fn read_frozen(tags: &[Tag]) -> Vec<String> {
+    let list = xdata_list(xdata(tags, APP), "VPFROZEN");
+    list.iter().take(MAX_XDATA_ITEMS).filter(|t| t.code == 1000).map(Tag::str).collect()
 }
 
 const POINT_NAMES: [&str; 5] = ["defpt", "p13", "p14", "p15", "p16"];

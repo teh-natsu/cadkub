@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use cadcraft_color::Color;
 use cadcraft_doc::*;
 use cadcraft_dxf::Tag;
-use cadcraft_geom::{Vec2, Vec3};
+use cadcraft_geom::{Bounds2, Vec2, Vec3};
 
 use crate::dxf_ext::{self, DimVal, K};
 
@@ -162,9 +162,16 @@ fn dim_xdata(w: &mut W, dm: &Dimension, cx: &Ctx) {
         w.xdata(ov.t);
         w.s(1002, "}");
     }
+    let mut ours = Vec::new();
+    if matches!(dm.kind, DimKind::ArcLength) {
+        ours.extend(dxf_ext::arclen_xdata(dm.p15));
+    }
     if !dm.assoc.is_empty() {
+        ours.extend(dxf_ext::assoc_xdata(&dm.assoc));
+    }
+    if !ours.is_empty() {
         w.s(1001, dxf_ext::APP);
-        w.xdata(dxf_ext::assoc_xdata(&dm.assoc));
+        w.xdata(ours);
     }
 }
 
@@ -244,6 +251,16 @@ fn header_vars(w: &mut W, d: &Drawing) {
     }
 }
 
+/// An entity's group 440 (DXF Reference): ByBlock is `0x01000000`, a fixed transparency its alpha
+/// with the "by alpha" flag `0x02000000` (the alpha mapping layers use). ByLayer writes nothing.
+fn transparency_440(t: Transparency) -> Option<i64> {
+    match t {
+        Transparency::ByLayer => None,
+        Transparency::ByBlock => Some(0x0100_0000),
+        Transparency::Percent(p) => Some(i64::from(0x0200_0000 | ((100 - u32::from(p.min(90))) * 255 / 100))),
+    }
+}
+
 fn common(w: &mut W, e: &Entity, owner: &str, paper: bool, subclass: &str) {
     common_x(w, e, owner, paper, subclass, None);
 }
@@ -281,12 +298,15 @@ fn common_x(w: &mut W, e: &Entity, owner: &str, paper: bool, subclass: &str, ass
     if !e.common.visible {
         w.i(60, 1);
     }
+    if let Some(v) = transparency_440(e.common.transparency) {
+        w.i(440, v);
+    }
     if !subclass.is_empty() {
         w.s(100, subclass);
     }
 }
 
-fn text_tags(w: &mut W, t: &Text, attrib_tag: Option<(&str, bool)>, attdef: bool) {
+fn text_tags(w: &mut W, t: &Text, attrib_tag: Option<(&str, bool)>, attdef_prompt: Option<&str>) {
     w.p(10, t.insert);
     w.f(40, t.height);
     w.s(1, &t.value);
@@ -322,9 +342,9 @@ fn text_tags(w: &mut W, t: &Text, attrib_tag: Option<(&str, bool)>, attdef: bool
     }
     match attrib_tag {
         Some((tag, invisible)) => {
-            w.s(100, if attdef { "AcDbAttributeDefinition" } else { "AcDbAttribute" });
-            if attdef {
-                w.s(3, "");
+            w.s(100, if attdef_prompt.is_some() { "AcDbAttributeDefinition" } else { "AcDbAttribute" });
+            if let Some(prompt) = attdef_prompt {
+                w.s(3, prompt);
             }
             w.s(2, tag);
             w.i(70, i64::from(invisible));
@@ -385,6 +405,9 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
             w.i(70, i64::from(p.closed) | if p.plinegen { 128 } else { 0 });
             if p.const_width > 0.0 {
                 w.f(43, p.const_width);
+            }
+            if p.elevation != 0.0 {
+                w.f(38, p.elevation);
             }
             for v in &p.vertices {
                 w.p2(10, v.p);
@@ -454,12 +477,12 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
         EntityKind::Text(t) => {
             w.s(0, "TEXT");
             common(w, e, owner, paper, "AcDbText");
-            text_tags(w, t, None, false);
+            text_tags(w, t, None, None);
         }
         EntityKind::AttDef(a) => {
             w.s(0, "ATTDEF");
             common(w, e, owner, paper, "AcDbText");
-            text_tags(w, &a.text, Some((&a.tag, a.invisible)), true);
+            text_tags(w, &a.text, Some((&a.tag, a.invisible)), Some(&a.prompt));
         }
         EntityKind::MText(t) => {
             w.s(0, "MTEXT");
@@ -512,7 +535,7 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
                     w.s(100, "AcDbEntity");
                     w.s(8, &e.common.layer);
                     w.s(100, "AcDbText");
-                    text_tags(w, &a.text, Some((&a.tag, a.invisible)), false);
+                    text_tags(w, &a.text, Some((&a.tag, a.invisible)), None);
                 }
                 let sh = w.h();
                 w.s(0, "SEQEND");
@@ -539,6 +562,7 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
                 DimKind::Radius => 4,
                 DimKind::Angular3P => 5,
                 DimKind::Ordinate { x_type } => 6 | if x_type { 64 } else { 0 },
+                // Written as aligned, marked by CadKub xdata (see `dim_xdata`).
                 DimKind::ArcLength => 1,
             };
             w.i(70, ty | 32 | if dm.user_text_pos { 128 } else { 0 });
@@ -546,6 +570,9 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
                 w.s(1, &dm.text);
             }
             w.s(3, &dm.style);
+            if dm.text_rotation != 0.0 {
+                w.f(53, dm.text_rotation.to_degrees());
+            }
             match dm.kind {
                 DimKind::Linear { rotation } => {
                     w.s(100, "AcDbAlignedDimension");
@@ -750,6 +777,9 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
                 }
             }
             w.i(98, 0);
+            if let Some(g) = &h.gradient {
+                gradient(w, g);
+            }
         }
         EntityKind::Viewport(v) => {
             w.s(0, "VIEWPORT");
@@ -762,10 +792,82 @@ fn entity(w: &mut W, d: &Drawing, e: &Entity, owner: &str, paper: bool, cx: &Ctx
             w.f(45, v.view_height);
             // Status flags: 16384 = display locked.
             w.i(90, if v.locked { 16384 } else { 0 });
+            if !v.frozen_layers.is_empty() {
+                w.s(1001, dxf_ext::APP);
+                w.xdata(dxf_ext::frozen_xdata(&v.frozen_layers));
+            }
         }
-        // Not yet written: images, wipeouts, tables, multileaders, unknown objects.
+        EntityKind::Wipeout(wo) => {
+            // A 1x1 image spanning the boundary's extents. Clip vertices are in pixel space, whose origin is
+            // the image's top-left corner with y pointing down: the reader maps each vertex back through
+            // insert + u * (x + 0.5) + v * (0.5 - y).
+            // Polygonal clip boundaries are closed, so the first vertex is repeated when needed.
+            let b = Bounds2::from_points(wo.boundary.iter().copied());
+            let o = if b.is_empty() { Vec2::ZERO } else { b.min };
+            let (sx, sy) = (if b.width() > 0.0 { b.width() } else { 1.0 }, if b.height() > 0.0 { b.height() } else { 1.0 });
+            w.s(0, "WIPEOUT");
+            common(w, e, owner, paper, "AcDbWipeout");
+            w.i(90, 0);
+            w.p(10, Vec3::new(o.x, o.y, 0.0));
+            w.p(11, Vec3::new(sx, 0.0, 0.0));
+            w.p(12, Vec3::new(0.0, sy, 0.0));
+            w.p2(13, Vec2::new(1.0, 1.0));
+            // Display flags 7 = show image, show unaligned, use clipping boundary; clipping on; default brightness/contrast/fade.
+            w.i(70, 7);
+            w.i(280, 1);
+            w.i(281, 50);
+            w.i(282, 50);
+            w.i(283, 0);
+            w.i(71, 2);
+            let mut pts = wo.boundary.clone();
+            if let (Some(first), Some(last)) = (pts.first().copied(), pts.last().copied())
+                && first != last
+            {
+                pts.push(first);
+            }
+            w.i(91, pts.len() as i64);
+            for q in pts {
+                w.p2(14, Vec2::new((q.x - o.x) / sx - 0.5, 0.5 - (q.y - o.y) / sy));
+            }
+        }
+        // Not yet written: images, tables, multileaders, unknown objects.
         _ => {}
     }
+}
+
+/// A hatch's gradient fill (DXF Reference, HATCH group codes 450–470): two-colour gradient
+/// with its rotation (radians), shift (0 = centered, 1 = shifted) and per-colour 463 records
+/// carrying ACI (63) and, for true colours, the RGB value (421). Those groups belong to R2004+
+/// files, so the same gradient also travels as `CADCRAFT` xdata, which survives this R2000
+/// file's conversion to DWG (where the native fields don't exist).
+fn gradient(w: &mut W, g: &Gradient) {
+    w.i(450, 1);
+    w.i(451, 0);
+    w.f(460, g.angle);
+    w.f(461, if g.centered { 0.0 } else { 1.0 });
+    w.i(452, 0);
+    w.f(462, 0.0);
+    w.i(453, 2);
+    for (k, c) in [(0.0, g.color1), (1.0, g.color2)] {
+        w.f(463, k);
+        match c {
+            Color::True(rgb) => {
+                w.i(63, i64::from(cadcraft_color::nearest_aci(rgb)));
+                w.i(421, i64::from(rgb.to_u32()));
+            }
+            c => w.i(63, i64::from(c.to_aci())),
+        }
+    }
+    w.s(470, &g.name);
+    w.s(1001, dxf_ext::APP);
+    w.s(1000, "GRADIENT");
+    // A 1000 group holds at most 255 bytes; cut at a character boundary.
+    let cut = g.name.char_indices().map(|(i, c)| i + c.len_utf8()).take_while(|end| *end <= 255).last().unwrap_or(0);
+    w.s(1000, g.name.get(..cut).unwrap_or_default());
+    w.f(1040, g.angle);
+    w.i(1070, i64::from(g.centered));
+    w.s(1000, g.color1.name());
+    w.s(1000, g.color2.name());
 }
 
 /// Anonymous dimension blocks (`*D1`…) with the rendered geometry, as consumers expect.
@@ -799,7 +901,7 @@ fn dim_block_entities(d: &Drawing, dm: &Dimension, layer: &str) -> Vec<Entity> {
                 height: style.text_height * style.scale.max(1e-9),
                 width: 0.0,
                 attach: 5,
-                rotation: 0.0,
+                rotation: g.text_angle,
                 style: style.text_style.clone(),
                 contents: g.value.clone(),
                 line_spacing: 1.0,
@@ -1108,6 +1210,9 @@ pub fn write(d: &Drawing) -> String {
     if !cx.assoc.is_empty() {
         classes.push(("DIMASSOC", "AcDbDimAssoc", 0, false));
     }
+    if every.iter().any(|e| matches!(e.kind, EntityKind::Wipeout(_))) {
+        classes.push(("WIPEOUT", "AcDbWipeout", 127, true));
+    }
     for (dxf_name, cpp, proxy, is_entity) in classes {
         w.s(0, "CLASS");
         w.s(1, dxf_name);
@@ -1174,6 +1279,16 @@ pub fn write(d: &Drawing) -> String {
             w.i(290, 0);
         }
         w.i(370, i64::from(l.lineweight.to_dxf()));
+        if l.transparency > 0 {
+            w.s(1001, dxf_ext::LAYER_TRANSPARENCY_APP);
+            w.i(1071, dxf_ext::transparency_to_dxf(l.transparency));
+        }
+        if !l.description.is_empty() {
+            // The first string is the layer standard's name, unused here.
+            w.s(1001, dxf_ext::LAYER_DESCRIPTION_APP);
+            w.s(1000, "");
+            w.s(1000, dxf_ext::xdata_str(&l.description));
+        }
     }
     w.s(0, "ENDTAB");
     // STYLE
@@ -1200,7 +1315,7 @@ pub fn write(d: &Drawing) -> String {
         table_head(&mut w, name, 0);
         w.s(0, "ENDTAB");
     }
-    let apps = ["ACAD", dxf_ext::APP, "AcadAnnotative"];
+    let apps = ["ACAD", dxf_ext::APP, "AcadAnnotative", dxf_ext::LAYER_TRANSPARENCY_APP, dxf_ext::LAYER_DESCRIPTION_APP];
     let th = table_head(&mut w, "APPID", apps.len());
     for app in apps {
         record_head(&mut w, "APPID", &th, "AcDbRegAppTableRecord");

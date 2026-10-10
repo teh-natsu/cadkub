@@ -188,7 +188,8 @@ fn status_icon(p: &egui::Painter, r: Rect, current: bool, used: bool) {
         p.line_segment([pos2(r.left() + 3.0, r.center().y), pos2(r.left() + 7.0, r.bottom() - 4.0)], Stroke::new(2.0, g));
         p.line_segment([pos2(r.left() + 7.0, r.bottom() - 4.0), pos2(r.right() - 3.0, r.top() + 3.0)], Stroke::new(2.0, g));
     } else {
-        let c = if used { Color32::from_rgb(0xc8, 0xcc, 0xd2) } else { Color32::from_rgb(0x80, 0x86, 0x90) };
+        let t = Tokens::get();
+        let c = if used { t.icon } else { t.text_faint };
         let pts = vec![
             pos2(r.left() + 2.0, r.center().y + 1.0),
             pos2(r.center().x, r.top() + 4.0),
@@ -308,6 +309,9 @@ pub fn dialog(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
             // A fixed-height table: the window keeps its size instead of growing to the screen.
             let avail = 330.0;
             ui.horizontal_top(|ui| {
+                // Cap the row: the vertical separator below takes all the height it is offered, and a
+                // resizable window offers its whole previous height, so the window grew every frame (#29).
+                ui.set_max_height(avail);
                 // ----- filter tree -----
                 ui.allocate_ui_with_layout(vec2(150.0, avail), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_min_width(150.0);
@@ -691,5 +695,28 @@ mod tests {
         assert!(crate_wild("w*s", "walls"));
         assert!(crate_wild("?alls", "walls"));
         assert!(!crate_wild("x*", "walls"));
+    }
+
+    /// Issue #29: just opening the dialog must not grow its window frame after frame.
+    #[test]
+    fn dialog_keeps_its_height() {
+        let mut session = cadcraft_engine::Session::new();
+        session.open_drawing(cadcraft_engine::sample::default_sample(), "Bracket", None);
+        let mut app = CadApp::new(session, crate::Services::default());
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(1600.0, 1000.0));
+        let mut heights = Vec::new();
+        for _ in 0..30 {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let mut open = true;
+                dialog(&mut app, ui.ctx(), &mut open);
+            });
+            out.textures_delta.clear();
+            let id = egui::LayerId::new(egui::Order::Middle, egui::Id::new("lpm_window"));
+            heights.push(ctx.memory(|m| m.area_rect(id.id)).map_or(0.0, |r| r.height()));
+        }
+        let (first, last) = (heights[5], heights[29]);
+        assert!(first > 0.0 && first < 700.0 && (last - first).abs() < 0.5, "window height drifted: {heights:?}");
     }
 }
