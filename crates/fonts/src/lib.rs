@@ -20,6 +20,16 @@ pub use mtext::{MTextColor, MTextLayout, MTextParams, MTextPiece, layout_mtext, 
 /// Name of the built-in font.
 pub const BUILTIN_FONT: &str = "CadKub Stroke";
 
+/// The upstream app's name for the same built-in font: drawings saved upstream name it in their
+/// text styles, and this app reads it as its own.
+pub const UPSTREAM_BUILTIN_FONT: &str = "CADCraft Stroke";
+
+/// Whether a text style font name means the built-in stroke font.
+pub fn is_builtin_font(name: &str) -> bool {
+    let n = name.trim();
+    n.eq_ignore_ascii_case(BUILTIN_FONT) || n.eq_ignore_ascii_case(UPSTREAM_BUILTIN_FONT)
+}
+
 /// One laid-out run of text: strokes in local coordinates (baseline at y = 0, x from 0).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Run {
@@ -260,7 +270,7 @@ impl TextFont {
             return TextFont::Outline(f);
         }
         let n = name.trim();
-        if n.is_empty() || n.eq_ignore_ascii_case(BUILTIN_FONT) {
+        if n.is_empty() || is_builtin_font(n) {
             return TextFont::Stroke;
         }
         ttf::find(&ttf::font_alt()).map(TextFont::Outline).unwrap_or(TextFont::Stroke)
@@ -540,6 +550,13 @@ mod tests {
     fn center_alignment_centres_on_point() {
         let (_, bb) = place_text("ABC", Vec2::ZERO, Some(Vec2::new(10.0, 0.0)), 1.0, 0.0, 1.0, 0.0, Align::Center, VAlign::Baseline);
         assert!((bb.center().x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cadkub_built_in_font_name_is_the_built_in_font() {
+        assert!(is_builtin_font("CadKub Stroke") && is_builtin_font(" cadkub stroke ") && !is_builtin_font("Arial"));
+        assert!(!TextFont::resolve(UPSTREAM_BUILTIN_FONT).is_outline());
+        assert!(ttf::find(UPSTREAM_BUILTIN_FONT).is_none());
     }
 
     #[test]

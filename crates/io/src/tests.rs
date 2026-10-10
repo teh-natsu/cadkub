@@ -245,6 +245,44 @@ fn layer_transparency_and_description_roundtrip() {
 }
 
 #[test]
+fn block_definition_properties_and_constant_attdefs_roundtrip() {
+    let mut d = Drawing::new_metric();
+    let mut b = Block::new("Title");
+    (b.description, b.units, b.explodable) = ("Drawing title block".into(), 4, false);
+    let text = Text {
+        insert: Vec3::ZERO,
+        align_pt: None,
+        height: 2.5,
+        value: "ACME".into(),
+        rotation: 0.0,
+        width_factor: 1.0,
+        oblique: 0.0,
+        style: "Standard".into(),
+        halign: HAlign::Left,
+        valign: VAlign::Baseline,
+    };
+    let attdef =
+        |tag: &str, invisible: bool, constant: bool| Attrib { tag: tag.into(), text: text.clone(), invisible, constant, prompt: String::new() };
+    for (i, a) in [attdef("COMPANY", false, true), attdef("SECRET", true, true), attdef("SHEET", false, false)].into_iter().enumerate() {
+        b.entities.push(Entity::new(Handle(0x500 + i as u64), EntityKind::AttDef(a)));
+    }
+    d.blocks.insert("Title".into(), std::sync::Arc::new(b));
+    d.blocks.insert("Plain".into(), std::sync::Arc::new(Block::new("Plain")));
+    d.bump_handseed(Handle(0x510));
+    let back = roundtrip(&d);
+    let t = back.block("Title").unwrap();
+    assert_eq!((t.description.as_str(), t.units, t.explodable), ("Drawing title block", 4, false));
+    let flags: Vec<(String, bool, bool)> = t
+        .entities
+        .iter()
+        .filter_map(|e| if let EntityKind::AttDef(a) = &e.kind { Some((a.tag.clone(), a.invisible, a.constant)) } else { None })
+        .collect();
+    assert_eq!(flags, [("COMPANY".into(), false, true), ("SECRET".into(), true, true), ("SHEET".into(), false, false)]);
+    let p = back.block("Plain").unwrap();
+    assert_eq!((p.description.as_str(), p.units, p.explodable), ("", 0, true));
+}
+
+#[test]
 fn reads_r12_style_polyline_and_paper_flag() {
     let text = "0\nSECTION\n2\nENTITIES\n0\nPOLYLINE\n8\n0\n66\n1\n70\n1\n0\nVERTEX\n8\n0\n10\n0\n20\n0\n0\nVERTEX\n8\n0\n10\n5\n20\n0\n42\n1\n0\nVERTEX\n8\n0\n10\n5\n20\n5\n0\nSEQEND\n0\nLINE\n67\n1\n8\n0\n10\n0\n20\n0\n11\n1\n21\n1\n0\nENDSEC\n0\nEOF\n";
     let d = read(text.as_bytes(), "a.dxf").unwrap();
@@ -569,6 +607,43 @@ fn viewport_frozen_layers_roundtrip() {
         .collect();
     assert!(frozen.contains(&(2, vec!["Walls".to_string(), "A B".to_string()])), "{frozen:?}");
     assert!(frozen.contains(&(3, Vec::new())), "{frozen:?}");
+}
+
+#[test]
+fn viewport_layer_colors_roundtrip() {
+    let mut d = sample();
+    let paper = Space::Paper("Layout1".into());
+    let vp = |id: u32, frozen: Vec<String>, colors: Vec<(String, Color)>| {
+        EntityKind::Viewport(Viewport {
+            center: Vec3::new(5.0, 4.0, 0.0),
+            width: 8.0,
+            height: 6.0,
+            view_center: Vec2::new(5.0, 2.5),
+            view_height: 12.0,
+            id,
+            locked: false,
+            frozen_layers: frozen,
+            layer_colors: colors,
+        })
+    };
+    let colors = vec![("Walls".to_string(), Color::Index(5)), ("A B".to_string(), Color::True(cadcraft_color::Rgb(255, 128, 0)))];
+    d.add(&paper, Common::default(), vp(2, Vec::new(), colors.clone())).unwrap();
+    d.add(&paper, Common::default(), vp(3, Vec::new(), Vec::new())).unwrap();
+    // Frozen layers and colour overrides share one CadKub xdata group.
+    d.add(&paper, Common::default(), vp(4, vec!["Walls".into()], colors.clone())).unwrap();
+    let back = roundtrip(&d);
+    let found: Vec<(u32, Vec<String>, Vec<(String, Color)>)> = back
+        .layouts
+        .iter()
+        .flat_map(|l| l.entities.iter())
+        .filter_map(|e| match &e.kind {
+            EntityKind::Viewport(v) => Some((v.id, v.frozen_layers.clone(), v.layer_colors.clone())),
+            _ => None,
+        })
+        .collect();
+    assert!(found.contains(&(2, Vec::new(), colors.clone())), "{found:?}");
+    assert!(found.contains(&(3, Vec::new(), Vec::new())), "{found:?}");
+    assert!(found.contains(&(4, vec!["Walls".to_string()], colors)), "{found:?}");
 }
 
 fn full_dim_style() -> DimStyle {
@@ -906,6 +981,35 @@ fn constraints_and_parameters_roundtrip_exactly() {
     assert_eq!(again.parametric, parametric);
     // Drawings without parametric data carry no record.
     assert!(!write_dxf(&Drawing::new_imperial()).contains("CADCRAFT_CONSTRAINTS"));
+}
+
+#[test]
+fn layer_states_roundtrip_next_to_constraints() {
+    let mut d = Drawing::new_imperial();
+    let (constraints, _) = parametric_sample(&mut d);
+    d.layers.push(Layer {
+        name: "Wände".into(),
+        color: Color::True(cadcraft_color::Rgb(200, 10, 40)),
+        transparency: 30,
+        description: "walls \\ hidden".into(),
+        ..Layer::default()
+    });
+    d.layer_states.push(LayerState { name: "Plot".into(), layers: d.layers.clone() });
+    let mut off = d.layers.clone();
+    for l in &mut off {
+        (l.on, l.frozen, l.locked, l.plot) = (false, true, true, false);
+    }
+    d.layer_states.push(LayerState { name: "All off".into(), layers: off });
+    let text = write_dxf(&d);
+    assert!(text.contains("CADCRAFT_LAYERSTATES"));
+    let back = read_dxf(text.as_bytes()).unwrap();
+    assert_eq!(back.layer_states, d.layer_states);
+    assert_eq!(back.constraints, constraints);
+    assert_eq!(roundtrip(&back).layer_states, d.layer_states);
+    #[cfg(not(target_arch = "wasm32"))]
+    assert_eq!(read(&write(&d, "x.dwg").unwrap(), "x.dwg").unwrap().layer_states, d.layer_states);
+    // Drawings without saved layer states carry no record.
+    assert!(!write_dxf(&Drawing::new_imperial()).contains("CADCRAFT_LAYERSTATES"));
 }
 
 fn table_sample() -> Table {

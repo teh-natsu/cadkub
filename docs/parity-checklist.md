@@ -4,7 +4,7 @@
 
 Menu-breadth parity: a reference menu item counts as covered when a CadKub command is registered under the same menu label. It measures breadth, not depth; see [target-app-parity.md](target-app-parity.md) for the weighted assessment.
 
-**Menu breadth: 233 / 491 items (47%)** · 295 registered commands.
+**Menu breadth: 233 / 491 items (47%)** · 296 registered commands.
 
 | Menu | Items | Covered | % |
 |---|---|---|---|

@@ -42,9 +42,9 @@ LOWER = re.compile(r"cadcraft(?![-_](?:" + "|".join(c.replace("-", "[-_]") for c
 # is data shared with CADCraft (the DXF xdata application CADCRAFT, the CADCRAFT_CONSTRAINTS
 # dictionary entry, CADCRAFT_* header variables) and stays, so drawings open in both apps.
 ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MAINTAINER", "NO_NATIVE_MENU", "REQUIRE_WINRES",
-            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE"]
+            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR"]
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
-DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO"}
+DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES"}
 
 # Credits to upstream that must keep the CADCraft name, and the cadcraft prefix shared by the
 # library crates.
@@ -57,6 +57,8 @@ PROTECTED = [
     "`cadcraft-`",
     "cadcraft*",
     "cadcraft_ui*",
+    # CADCraft's name for the built-in font, which CadKub reads as its own (DXF files).
+    "CADCraft Stroke",
 ]
 REPLACEMENTS = [
     (r"ai\.storyteller\.cadcraft", r"io\.github\.teh_natsu\.cadkub"),  # in regular expressions
