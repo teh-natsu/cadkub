@@ -42,7 +42,7 @@ LOWER = re.compile(r"cadcraft(?![-_](?:" + "|".join(c.replace("-", "[-_]") for c
 # is data shared with CADCraft (the DXF xdata application CADCRAFT, the CADCRAFT_CONSTRAINTS
 # dictionary entry, CADCRAFT_* header variables) and stays, so drawings open in both apps.
 ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MAINTAINER", "NO_NATIVE_MENU", "REQUIRE_WINRES",
-            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND"]
+            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE"]
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
 DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO"}
 
@@ -67,7 +67,7 @@ REPLACEMENTS = [
     ("Cadcraft", "Cadkub"),
 ]
 
-BRANDING = re.compile(r"discord\.gg|getartcraft|artcraft[-_](mark|logo)|docs/brand|Learning Machines|storyteller\.ai|ai\.storyteller", re.I)
+BRANDING = re.compile(r"discord|crafting apps by|getartcraft|artcraft[-_](mark|logo)|docs/brand|Learning Machines|storyteller\.ai|ai\.storyteller", re.I)
 BRANDING_ALLOWED_FILES = {"NOTICE", "README.md", "ROADMAP.md", "LICENSE-MIT", "packaging/sync_upstream.py"}
 
 
