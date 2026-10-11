@@ -1,22 +1,22 @@
 # Parity checklist
 
-> **Generated:** 2026-10-10 by `cargo xtask parity`. Do not edit by hand.
+> **Generated:** 2026-10-11 by `cargo xtask parity`. Do not edit by hand.
 
 Menu-breadth parity: a reference menu item counts as covered when a CadKub command is registered under the same menu label. It measures breadth, not depth; see [target-app-parity.md](target-app-parity.md) for the weighted assessment.
 
-**Menu breadth: 233 / 491 items (47%)** · 296 registered commands.
+**Menu breadth: 237 / 491 items (48%)** · 313 registered commands.
 
 | Menu | Items | Covered | % |
 |---|---|---|---|
-| File | 22 | 9 | 41% |
-| Edit | 13 | 10 | 77% |
+| File | 22 | 10 | 45% |
+| Edit | 13 | 11 | 85% |
 | View | 75 | 27 | 36% |
 | Insert | 11 | 2 | 18% |
-| Format | 27 | 23 | 85% |
+| Format | 27 | 24 | 89% |
 | Tools | 85 | 46 | 54% |
 | Draw | 87 | 55 | 63% |
 | Dimension | 28 | 22 | 79% |
-| Modify | 113 | 37 | 33% |
+| Modify | 113 | 38 | 34% |
 | Window | 22 | 2 | 9% |
 | Help | 8 | 0 | 0% |
 
@@ -32,12 +32,10 @@ Menu-breadth parity: a reference menu item counts as covered when a CadKub comma
 - File > Package Drawing...
 - File > DWG Compare...
 - File > Markup Import...
-- File > Plot Styles...
 - File > Batch Publish...
 - File > Share...
 - Edit > Undo Group of commands
 - Edit > Cut with Base Point
-- Edit > Paste as Block
 - View > Zoom > Dynamic
 - View > Pan > Point
 - View > Orbit > Constrained Orbit
@@ -97,7 +95,6 @@ Menu-breadth parity: a reference menu item counts as covered when a CadKub comma
 - Insert > Reference Manager
 - Format > Transparency
 - Format > Scale List...
-- Format > Plot Style...
 - Format > Thickness
 - Tools > Spelling
 - Tools > Draw Order > Bring Above Objects
@@ -187,7 +184,6 @@ Menu-breadth parity: a reference menu item counts as covered when a CadKub comma
 - Modify > Object > Multileader > Remove Leader
 - Modify > Object > Multileader > Collect
 - Modify > Object > Multiline...
-- Modify > Object > Attribute > Global
 - Modify > Object > Block Description...
 - Modify > Clip > Image
 - Modify > Clip > Xref

@@ -72,6 +72,9 @@
 
 ต้องมี Rust รุ่นล่าสุด (บน Windows ต้องมี Visual Studio Build Tools ที่มี C++ ด้วย)
 
+Desktop and web UI builds require Rust 1.95 or later. The core workspace's declared minimum
+remains Rust 1.90.
+
 ```sh
 git clone https://github.com/teh-natsu/cadkub
 cd cadkub

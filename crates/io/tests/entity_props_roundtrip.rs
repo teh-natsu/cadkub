@@ -83,6 +83,7 @@ fn hatch(pattern: &str, gradient: Option<Gradient>) -> Hatch {
         gradient,
         origin: Vec2::new(1.0, 2.0),
         background: Some(Color::Index(2)),
+        pattern_lines: Vec::new(),
     }
 }
 
@@ -159,7 +160,9 @@ fn builtin_font_name_roundtrips_and_other_readers_get_txt() {
     d.text_styles.push(TextStyle { name: "Notes".into(), font: "romans.shx".into(), ..TextStyle::default() });
     let text = write_dxf(&d);
     let g = groups(&text);
-    let standard = g.iter().position(|(c, v)| *c == 2 && v == "Standard").expect("Standard style");
+    // The STYLE table's "Standard" entry (other tables have a "Standard" too).
+    let table = g.iter().position(|(c, v)| *c == 2 && v == "STYLE").expect("STYLE table");
+    let standard = table + g.iter().skip(table).position(|(c, v)| *c == 2 && v == "Standard").expect("Standard style");
     let file = g.iter().skip(standard).find(|(c, _)| *c == 3).map(|(_, v)| v.as_str());
     assert_eq!(file, Some("txt"), "font file group stays a file other readers have");
     let r = read_dxf(text.as_bytes()).expect("reopen");
