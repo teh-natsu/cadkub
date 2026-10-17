@@ -5,24 +5,36 @@
 //! per-character fallback to installed fonts for characters the chosen font lacks. Handles the
 //! `%%` control codes, alignment modes, width factor, obliquing, MTEXT inline formatting
 //! (paragraphs, stacking, height changes), word wrap and attachment points.
+//!
+//! Right-to-left lines (Persian, Arabic, Urdu, Hebrew) go through [`bidi`] (the Unicode
+//! Bidirectional Algorithm, Arabic joining) and `complex` (OpenType shaping with `harfrust`):
+//! each run is shaped in the font that draws it before glyphs are placed, so the fallback font
+//! drawing Arabic in a stroke-font style joins its letters too.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod bidi;
+mod complex;
 mod mtext;
 mod stroke;
+pub mod subset;
 pub mod thai;
 pub mod ttf;
 
 use cadcraft_geom::{Bounds2, Vec2};
 
+pub use mtext::para::{DEFAULT_TAB, ListStyle, MTextColumnSpec, ParaAlign, ParaProps, Paragraphs, TabKind, list_contents};
 pub use mtext::{MTextColor, MTextLayout, MTextParams, MTextPiece, layout_mtext, layout_mtext_with, plain_mtext};
+
+mod craft_fonts;
+pub use craft_fonts::{CRAFT_FONTS, CraftFont};
 
 /// Name of the built-in font.
 pub const BUILTIN_FONT: &str = "CadKub Stroke";
 
 /// The upstream app's name for the same built-in font: drawings saved upstream name it in their
 /// text styles, and this app reads it as its own.
-pub const UPSTREAM_BUILTIN_FONT: &str = "CADCraft Stroke";
+pub const UPSTREAM_BUILTIN_FONT: &str = concat!("CAD", "Craft Stroke");
 
 /// Whether a text style font name means the built-in stroke font.
 pub fn is_builtin_font(name: &str) -> bool {
@@ -88,14 +100,53 @@ pub fn char_advance(c: char) -> f64 {
     }
 }
 
+/// Whether `c` is an East Asian wide character (CJK ideographs and punctuation, kana, Hangul,
+/// fullwidth forms): drawn in a square cell, like a big font's characters.
+pub fn is_wide(c: char) -> bool {
+    matches!(u32::from(c),
+        0x1100..=0x115F
+            | 0x2E80..=0x303E
+            | 0x3041..=0x33FF
+            | 0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xA000..=0xA4CF
+            | 0xAC00..=0xD7A3
+            | 0xF900..=0xFAFF
+            | 0xFE30..=0xFE4F
+            | 0xFF00..=0xFF60
+            | 0xFFE0..=0xFFE6
+            | 0x20000..=0x3FFFD)
+}
+
+/// Where a CJK font's ideographic em box starts below the baseline, in em: the common value
+/// (fonts put the box from -0.12 em to 0.88 em).
+const IDEOGRAPHIC_DESCENT: f64 = 0.12;
+
+/// How the stroke font draws a fallback glyph of `c` at height `h`: its origin's height above
+/// the baseline and the scale of its font units (at 1000 per em). Wide characters fill a square
+/// cell from the baseline to the text height, as a big font's do in AutoCAD-style SHX text,
+/// so CJK text keeps the size and spacing its drawing was laid out with; other characters are
+/// sized like TrueType text (cap height = text height).
+fn stroke_fallback_metrics(g: &ttf::GlyphOutline, c: char, h: f64) -> (f64, f64) {
+    if is_wide(c) { (IDEOGRAPHIC_DESCENT * h, h / 1000.0) } else { (0.0, h / g.cap) }
+}
+
+/// Whether the stroke font draws `c` from a fallback font.
+fn draws_fallback(c: char) -> bool {
+    stroke::glyph(c).is_none() && !c.is_whitespace() && ttf::fallback_glyph(c).is_some()
+}
+
 /// Advance of `c` in the stroke font at height `h` and width factor `wf`; characters the
 /// stroke font lacks take a fallback font's advance when one has them.
 fn stroke_advance(c: char, h: f64, wf: f64) -> f64 {
+    if bidi::is_format_control(c) {
+        return 0.0;
+    }
     if stroke::glyph(c).is_none()
         && !c.is_whitespace()
         && let Some(g) = ttf::fallback_glyph(c)
     {
-        return g.advance * h / g.cap * wf;
+        return g.advance * stroke_fallback_metrics(&g, c, h).1 * wf;
     }
     char_advance(c) * h * wf
 }
@@ -104,11 +155,6 @@ fn stroke_advance(c: char, h: f64, wf: f64) -> f64 {
 /// (radians). Characters the stroke font lacks are drawn from an installed font that has them
 /// (glyph outlines, sized like TrueType text), else as a missing-glyph box.
 pub fn shape_stroke(s: &str, height: f64, width_factor: f64, oblique: f64) -> Shaped {
-    shape_stroke_chars(&decode_controls(s), height, width_factor, oblique)
-}
-
-/// [`shape_stroke`] for decoded characters.
-fn shape_stroke_chars(chars: &[(char, bool, bool)], height: f64, width_factor: f64, oblique: f64) -> Shaped {
     let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
     let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
     let sc = h / stroke::CAP;
@@ -117,34 +163,31 @@ fn shape_stroke_chars(chars: &[(char, bool, bool)], height: f64, width_factor: f
     let mut x = 0.0;
     let mut under_start: Option<f64> = None;
     let mut over_start: Option<f64> = None;
-    for &(c, under, over) in chars {
+    let mut gap = stroke::GAP * sc * wf;
+    if thai::needs_shaping(s)
+        && let Some(sh) = complex::shape(None, s, h, wf, oblique)
+    {
+        return sh;
+    }
+    for (c, under, over) in decode_controls(s) {
+        if bidi::is_format_control(c) {
+            continue;
+        }
         let mut adv = char_advance(c) * h * wf;
+        gap = stroke::GAP * sc * wf;
         match stroke::glyph(c) {
-            Some((_, spec)) => {
-                for st in stroke::strokes(spec) {
-                    let pts: Vec<Vec2> = st.iter().map(|(gx, gy)| Vec2::new(x + (gx * sc * wf) + gy * sc * shear, gy * sc)).collect();
-                    if pts.len() == 1 {
-                        if let Some(p) = pts.first() {
-                            out.strokes.push(vec![*p, *p + Vec2::new(sc * 0.2, 0.0)]);
-                        }
-                    } else {
-                        out.strokes.push(pts);
-                    }
-                }
-            }
+            Some((_, spec)) => draw_stroke_glyph(&mut out, spec, x, sc, wf, shear),
             None if !c.is_whitespace() => match ttf::fallback_glyph(c) {
                 Some(g) => {
-                    let contours = ttf::place_glyph(&g, x, h, wf, shear);
+                    let (y, scale) = stroke_fallback_metrics(&g, c, h);
+                    let contours = ttf::place_glyph_at(&g, Vec2::new(x, y), scale, wf, shear);
                     if !contours.is_empty() {
-                        out.glyphs.push(contours);
+                        out.push_glyph(contours, ttf::text_glyph_at(&g, c, Vec2::new(x + y * shear, y), scale, wf, shear));
                     }
-                    adv = g.advance * h / g.cap * wf;
+                    adv = g.advance * scale * wf;
+                    gap = 0.0;
                 }
-                None => {
-                    // Unknown glyph: a small box, like a missing-glyph rectangle.
-                    let w = 4.0 * sc * wf;
-                    out.strokes.push(vec![Vec2::new(x, 0.0), Vec2::new(x + w, 0.0), Vec2::new(x + w, h), Vec2::new(x, h), Vec2::new(x, 0.0)]);
-                }
+                None => missing_glyph_box(&mut out, x, h, sc * wf),
             },
             None => {}
         }
@@ -167,7 +210,9 @@ fn shape_stroke_chars(chars: &[(char, bool, bool)], height: f64, width_factor: f
         }
         x += adv;
     }
-    let end = (x - stroke::GAP * sc * wf).max(0.0);
+    // The stroke font's gap after the last character isn't part of the line; a fallback glyph
+    // has none.
+    let end = (x - gap).max(0.0);
     if let Some(sx) = under_start {
         out.strokes.push(vec![Vec2::new(sx, -h * 0.2), Vec2::new(end, -h * 0.2)]);
     }
@@ -178,10 +223,31 @@ fn shape_stroke_chars(chars: &[(char, bool, bool)], height: f64, width_factor: f
     out
 }
 
+/// Draw stroke-font glyph `spec` with its left edge at `x` (`sc` = text height / cap height).
+fn draw_stroke_glyph(out: &mut Shaped, spec: &str, x: f64, sc: f64, wf: f64, shear: f64) {
+    for st in stroke::strokes(spec) {
+        let pts: Vec<Vec2> = st.iter().map(|(gx, gy)| Vec2::new(x + (gx * sc * wf) + gy * sc * shear, gy * sc)).collect();
+        if pts.len() == 1 {
+            if let Some(p) = pts.first() {
+                out.strokes.push(vec![*p, *p + Vec2::new(sc * 0.2, 0.0)]);
+            }
+        } else {
+            out.strokes.push(pts);
+        }
+    }
+}
+
+/// A character no font has: a small box, like a missing-glyph rectangle (`k` = text height /
+/// cap height × width factor).
+fn missing_glyph_box(out: &mut Shaped, x: f64, h: f64, k: f64) {
+    let w = 4.0 * k;
+    out.strokes.push(vec![Vec2::new(x, 0.0), Vec2::new(x + w, 0.0), Vec2::new(x + w, h), Vec2::new(x, h), Vec2::new(x, 0.0)]);
+}
+
 /// Lay out a single line at `height`, with `width_factor` and `oblique` (radians), in the
 /// stroke font (fallback glyphs become closed outlines).
 pub fn layout_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Run {
-    let sh = shape_stroke_line(s, height, width_factor, oblique);
+    let sh = shape_stroke(s, height, width_factor, oblique);
     let mut strokes = sh.strokes;
     strokes.extend(sh.glyphs.into_iter().flatten());
     Run { strokes, width: sh.width }
@@ -189,67 +255,31 @@ pub fn layout_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Run
 
 /// Width of a line without building strokes.
 pub fn line_width(s: &str, height: f64, width_factor: f64) -> f64 {
-    stroke_text_width(s, height, width_factor)
-}
-
-/// Width of decoded characters in the stroke font (no Thai shaping).
-fn chars_width(chars: &[(char, bool, bool)], height: f64, width_factor: f64) -> f64 {
+    if thai::needs_shaping(s) {
+        let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
+        let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
+        if let Some(sh) = complex::shape(None, s, h, wf, 0.0) {
+            return sh.width;
+        }
+    }
+    let chars = decode_controls(s);
     let n: f64 = chars.iter().map(|(c, _, _)| stroke_advance(*c, height, width_factor)).sum();
-    (n - stroke::GAP / stroke::CAP * height * width_factor).max(0.0)
+    // The stroke font's gap after the last character isn't part of the line; a fallback glyph
+    // has none.
+    let last = chars.iter().rev().map(|(c, _, _)| *c).find(|c| !bidi::is_format_control(*c));
+    let gap = if last.is_some_and(draws_fallback) { 0.0 } else { stroke::GAP / stroke::CAP * height * width_factor };
+    (n - gap).max(0.0)
 }
 
-/// One line in the stroke font, with Thai runs shaped in the bundled Thai face (the stroke font has
-/// no Thai letters, and an installed fallback font would draw Thai unshaped). Lines without Thai
-/// are exactly [`shape_stroke`].
-fn shape_stroke_line(s: &str, height: f64, width_factor: f64, oblique: f64) -> Shaped {
-    let chars = decode_controls(s);
-    if !chars.iter().any(|(c, _, _)| thai::is_thai(*c)) {
-        return shape_stroke_chars(&chars, height, width_factor, oblique);
+/// Width of the gap MTEXT leaves between two words. Words are measured without their trailing
+/// letter gap, so the stroke font's gap is added on both sides of the space, as TEXT lays it out.
+pub fn space_width(font: &TextFont, height: f64, width_factor: f64) -> f64 {
+    if let TextFont::Outline(face) = font
+        && let Some(w) = ttf::width(face, " ", height, width_factor)
+    {
+        return w;
     }
-    let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
-    let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
-    let shear = oblique.tan().clamp(-10.0, 10.0);
-    let mut out = Shaped::default();
-    let (mut x, mut end) = (0.0, 0.0);
-    for (is_thai, run) in thai::segments(&chars) {
-        if is_thai && let Some(t) = thai::shape(thai::thai_face(), run, h, wf, shear, x) {
-            let (_, under, over) = run.first().copied().unwrap_or((' ', false, false));
-            out.glyphs.extend(t.glyphs);
-            out.strokes.extend(decorations(&[(x, x + t.width, under, over)], h));
-            x += t.width;
-            end = x;
-            continue;
-        }
-        let mut r = shape_stroke_chars(run, h, wf, oblique);
-        r.map(|p| p + Vec2::new(x, 0.0));
-        out.strokes.extend(r.strokes);
-        out.glyphs.extend(r.glyphs);
-        end = x + r.width;
-        x += run.iter().map(|(c, _, _)| stroke_advance(*c, h, wf)).sum::<f64>();
-    }
-    out.width = end;
-    out
-}
-
-/// Width of [`shape_stroke_line`].
-fn stroke_text_width(s: &str, height: f64, width_factor: f64) -> f64 {
-    let chars = decode_controls(s);
-    if !chars.iter().any(|(c, _, _)| thai::is_thai(*c)) {
-        return chars_width(&chars, height, width_factor);
-    }
-    let h = if height.is_finite() && height > 0.0 { height } else { 1.0 };
-    let wf = if width_factor.is_finite() && width_factor.abs() > 1e-6 { width_factor } else { 1.0 };
-    let (mut x, mut end) = (0.0, 0.0);
-    for (is_thai, run) in thai::segments(&chars) {
-        if is_thai && let Some(w) = thai::width(thai::thai_face(), run, h, wf) {
-            x += w;
-            end = x;
-            continue;
-        }
-        end = x + chars_width(run, h, wf);
-        x += run.iter().map(|(c, _, _)| stroke_advance(*c, h, wf)).sum::<f64>();
-    }
-    end
+    stroke_advance(' ', height, width_factor) + stroke::GAP / stroke::CAP * height * width_factor
 }
 
 /// The font a piece of text is set in: the built-in stroke font or an installed TrueType /
@@ -282,16 +312,53 @@ impl TextFont {
 
 /// Shaped text in local or world coordinates: open strokes (stroke-font glyphs, underlines,
 /// fraction bars) and closed glyph outlines grouped per glyph (fill each group even-odd).
+/// Outline glyphs also come as [`TextGlyph`]s, for output that keeps text as text (PDF).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shaped {
     pub strokes: Vec<Vec<Vec2>>,
     pub glyphs: Vec<Vec<Vec<Vec2>>>,
     pub width: f64,
+    /// The outline glyphs as font glyphs: which face and glyph each of [`Shaped::glyphs`] is,
+    /// and where it sits.
+    pub text: Vec<TextGlyph>,
+}
+
+/// A glyph of an installed outline font, placed: its outline is `Shaped::glyphs[outline]`.
+/// Point `(u, v)` of the glyph in em units (1000 font units per em, as PDF glyph space) lands
+/// at `origin + x * u / 1000 + y * v / 1000`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextGlyph {
+    pub face: ttf::Face,
+    /// Glyph id in the face.
+    pub gid: u16,
+    /// The character it shows.
+    pub ch: char,
+    /// Index of its outline in [`Shaped::glyphs`].
+    pub outline: usize,
+    /// The glyph origin (on the baseline).
+    pub origin: Vec2,
+    /// One em along the baseline (width factor applied).
+    pub x: Vec2,
+    /// One em up (obliquing applied).
+    pub y: Vec2,
 }
 
 impl Shaped {
-    /// Apply a point transform to every vertex.
+    /// Add a glyph outline and, when it is a font glyph, its [`TextGlyph`].
+    pub(crate) fn push_glyph(&mut self, contours: Vec<Vec<Vec2>>, text: Option<TextGlyph>) {
+        if let Some(t) = text {
+            self.text.push(TextGlyph { outline: self.glyphs.len(), ..t });
+        }
+        self.glyphs.push(contours);
+    }
+    /// Apply a point transform to every vertex (an affine map: text glyphs keep their axes).
     pub fn map(&mut self, f: impl Fn(Vec2) -> Vec2) {
+        for t in &mut self.text {
+            let o = f(t.origin);
+            t.x = f(t.origin + t.x) - o;
+            t.y = f(t.origin + t.y) - o;
+            t.origin = o;
+        }
         for s in &mut self.strokes {
             for p in s.iter_mut() {
                 *p = f(*p);
@@ -307,6 +374,8 @@ impl Shaped {
     }
     /// Append another shaped piece (already in the same coordinates).
     pub fn extend(&mut self, other: Shaped) {
+        let base = self.glyphs.len();
+        self.text.extend(other.text.into_iter().map(|t| TextGlyph { outline: t.outline + base, ..t }));
         self.strokes.extend(other.strokes);
         self.glyphs.extend(other.glyphs);
     }
@@ -357,7 +426,7 @@ pub fn shape_line(font: &TextFont, s: &str, height: f64, width_factor: f64, obli
     {
         return sh;
     }
-    shape_stroke_line(s, height, width_factor, oblique)
+    shape_stroke(s, height, width_factor, oblique)
 }
 
 /// Width of one line in `font`.
@@ -367,7 +436,7 @@ pub fn text_width(font: &TextFont, s: &str, height: f64, width_factor: f64) -> f
     {
         return w;
     }
-    stroke_text_width(s, height, width_factor)
+    line_width(s, height, width_factor)
 }
 
 /// Horizontal / vertical alignment for single-line text (matches DXF 72/73 semantics).
@@ -511,6 +580,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn upstream_built_in_font_name_is_the_built_in_font() {
+        assert!(is_builtin_font(BUILTIN_FONT) && is_builtin_font(&format!(" {} ", UPSTREAM_BUILTIN_FONT.to_lowercase())));
+        assert!(!is_builtin_font("Arial"));
+        assert!(!TextFont::resolve(UPSTREAM_BUILTIN_FONT).is_outline());
+        assert!(ttf::find(UPSTREAM_BUILTIN_FONT).is_none());
+    }
+
+    #[test]
     fn every_ascii_printable_has_a_glyph() {
         for c in ' '..='~' {
             assert!(stroke::glyph(c).is_some(), "missing glyph {c:?}");
@@ -555,28 +632,24 @@ mod tests {
     }
 
     #[test]
-    fn cadkub_built_in_font_name_is_the_built_in_font() {
-        assert!(is_builtin_font("CadKub Stroke") && is_builtin_font(" cadkub stroke ") && !is_builtin_font("Arial"));
-        assert!(!TextFont::resolve(UPSTREAM_BUILTIN_FONT).is_outline());
-        assert!(ttf::find(UPSTREAM_BUILTIN_FONT).is_none());
-    }
-
-    #[test]
-    fn thai_in_the_stroke_font_uses_the_thai_face() {
-        let font = TextFont::Stroke;
-        let sh = shape_line(&font, "ห้อง A-101", 1.0, 1.0, 0.0);
-        assert_eq!(sh.glyphs.len(), 4, "ห ้ อ ง as outlines");
-        assert!(!sh.strokes.is_empty(), "the Latin part stays in the stroke font");
-        assert!((text_width(&font, "ห้อง A-101", 1.0, 1.0) - sh.width).abs() < 1e-9);
-        // The Latin part starts after the Thai word.
-        let thai_right = sh.glyphs.iter().flatten().flatten().map(|p| p.x).fold(f64::MIN, f64::max);
-        let latin_left = sh.strokes.iter().flatten().map(|p| p.x).fold(f64::MAX, f64::min);
-        assert!(latin_left > thai_right, "{latin_left} > {thai_right}");
-        // Lines without Thai are unchanged.
-        assert_eq!(shape_line(&font, "A-101", 1.0, 1.0, 0.0).strokes, layout_line("A-101", 1.0, 1.0, 0.0).strokes);
-        // Hostile input stays bounded: an over-long Thai run falls back to missing-glyph boxes.
-        let long = "ก".repeat(5_000);
-        assert!(shape_line(&font, &long, 1.0, 1.0, 0.0).glyphs.is_empty());
+    fn rtl_text_justification_works_on_the_text_box() {
+        // Right- and centre-justified right-to-left TEXT: the box sits on the alignment point
+        // and every glyph stays inside it.
+        for (h, want) in [(Align::Right, 10.0), (Align::Center, 10.0 - 0.5), (Align::Left, 0.0)] {
+            let p = TextParams { h, align_pt: Some(Vec2::new(10.0, 0.0)), ..TextParams::new(Vec2::ZERO, 1.0) };
+            let (sh, bb) = place(&TextFont::Stroke, "قیمت 25 تومان", &p);
+            let edge = match h {
+                Align::Right => bb.max.x,
+                Align::Center => bb.center().x - 0.5,
+                _ => bb.min.x,
+            };
+            assert!((edge - want).abs() < 1e-9, "{h:?}: {edge}");
+            // An installed Arabic-script font may overhang its advance a little (ink outside
+            // the box is normal); a tenth of the height keeps this independent of the machine.
+            for q in sh.outlines().iter().flatten() {
+                assert!(q.x >= bb.min.x - 0.1 && q.x <= bb.max.x + 0.1, "{h:?}: {} outside {:?}", q.x, bb);
+            }
+        }
     }
 
     #[test]
@@ -600,20 +673,6 @@ mod ttf_tests {
         assert!(run.width > 1.5 && run.width < 4.0, "width {}", run.width);
         let maxy = run.strokes.iter().flatten().map(|p| p.y).fold(f64::MIN, f64::max);
         assert!((maxy - 1.0).abs() < 0.1, "cap height ~ text height, got {maxy}");
-    }
-
-    #[test]
-    fn thai_in_a_font_without_thai_uses_the_thai_face() {
-        // Skips cleanly when none of these Latin-only system fonts is installed.
-        let Some(face) = ["Arial", "Helvetica", "DejaVuSans", "Verdana"].iter().find_map(|n| crate::ttf::find(n)) else {
-            return;
-        };
-        if face.has_glyph('ไ') {
-            return; // this system's copy has Thai letters of its own
-        }
-        let sh = crate::ttf::shape(&face, "ไทย AB", 1.0, 1.0, 0.0).unwrap_or_default();
-        assert_eq!(sh.glyphs.len(), 5, "three Thai letters from the Thai face, then A and B");
-        assert!((crate::ttf::width(&face, "ไทย AB", 1.0, 1.0).unwrap_or_default() - sh.width).abs() < 1e-9);
     }
 
     #[test]
@@ -686,8 +745,31 @@ mod ttf_tests {
         let sh = crate::shape_stroke("AB\u{4E2D}\u{6587}", 1.0, 1.0, 0.0);
         assert_eq!(sh.glyphs.len(), 2, "two fallback glyphs");
         assert!(!sh.strokes.iter().any(|s| s.len() == 5 && s.first() == s.last()), "no missing-glyph boxes");
-        let maxy = sh.glyphs.iter().flatten().flatten().map(|p| p.y).fold(f64::MIN, f64::max);
-        assert!(maxy > 0.8 && maxy < 1.8, "sized like TrueType text (cap height = text height), got {maxy}");
         assert!((crate::line_width("AB\u{4E2D}\u{6587}", 1.0, 1.0) - sh.width).abs() < 1e-9);
+    }
+
+    /// #674: CJK characters in stroke-font (SHX) text fill a square cell from the baseline to the
+    /// text height, as a big font's do, instead of being sized by the fallback font's Latin cap
+    /// height (which made them about 1.4 times too large and too widely spaced).
+    #[test]
+    fn cjk_in_stroke_text_fills_a_square_cell_like_a_big_font() {
+        if crate::ttf::fallback_for('\u{4E2D}').is_none() {
+            return;
+        }
+        let (h, wf) = (2.5, 0.8);
+        let one = crate::shape_stroke("\u{4E2D}", h, wf, 0.0);
+        let four = crate::shape_stroke("\u{4E2D}\u{6587}\u{5B57}\u{4F53}", h, wf, 0.0);
+        let pts: Vec<_> = four.glyphs.iter().flatten().flatten().copied().collect();
+        let (miny, maxy) = pts.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
+        assert!(miny > -0.1 * h && maxy < 1.05 * h && maxy > 0.75 * h, "glyphs span {miny}..{maxy} for height {h}");
+        let cell = h * wf;
+        assert!(
+            (one.width - cell).abs() < 0.05 * cell && (four.width - 4.0 * cell).abs() < 0.2 * cell,
+            "widths {} and {}, cell {cell}",
+            one.width,
+            four.width
+        );
+        assert!((crate::line_width("\u{4E2D}\u{6587}\u{5B57}\u{4F53}", h, wf) - four.width).abs() < 1e-9);
+        assert!(crate::is_wide('\u{3042}') && crate::is_wide('\u{AC00}') && crate::is_wide('\u{FF21}') && !crate::is_wide('A'));
     }
 }

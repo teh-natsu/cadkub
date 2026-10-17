@@ -46,7 +46,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("ellipse", "Ellipse", run_ellipse)
             .menu(&["Draw", "Ellipse", "Center"])
             .alias(&["el"])
-            .params("{center, major: [dx,dy], ratio, start?, end? (degrees)}")
+            .params("{center, major: [dx,dy], ratio, start?, end? (degrees)} | {isocircle: {center, radius | diameter, plane?}}")
             .interactive(|_| Ok(Box::new(EllipseM::default()))),
         CommandSpec::new("point", "Point", run_point)
             .menu(&["Draw", "Point", "Single Point"])
@@ -84,7 +84,11 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("mtext", "Multiline Text", run_mtext)
             .menu(&["Draw", "Text", "Multiline Text..."])
             .alias(&["t", "mt"])
-            .params("{at, text, height?, width?, attach?: 1..9 | justify?: TL..BR, rotation?, style?, lineSpacing?, lineSpacingExact?}")
+            .params(
+                "{at, text, height?, width?, attach?: 1..9 | justify?: TL..BR, rotation?, style?, lineSpacing?, lineSpacingExact?, \
+                 list?: bullet|number|lower|upper, indent?, firstIndent?, rightIndent?, tabs?: [..], align?: left|center|right|justify|distributed, \
+                 columns?: {type: static|dynamic, count?, gutter?, height, heights?, reversed?}} (indents and tabs in text heights; width = one column)",
+            )
             .interactive(|_| Ok(Box::new(MTextM::default()))),
     ]
 }
@@ -221,6 +225,9 @@ fn run_polygon(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn run_ellipse(s: &mut Session, p: &Value) -> Result<Value> {
+    if p.get("isocircle").is_some() {
+        return super::settings::iso::run_isocircle(s, p);
+    }
     let c = point_req("ellipse", p, "center")?;
     let m = point_req("ellipse", p, "major")?;
     let ratio = f64_req("ellipse", p, "ratio")?;
@@ -264,7 +271,7 @@ fn run_spline(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Spline::fit_with(&f, bool_or(p, "closed", false), super::spline_opts::json_options(s, p)?)
     } else if let Some(c) = points_param(p, "control") {
-        if c.len() < 2 {
+        if c.len() < 2 || c.len() > super::curves::MAX_GEN {
             return Err(bad("spline", "need 2+ control points"));
         }
         // Degree 1..=10 as at the Degree prompt, `spline.cv` and DXF input (tessellation grows
@@ -363,16 +370,18 @@ fn run_mtext(s: &mut Session, p: &Value) -> Result<Value> {
         Some(j) => super::mtext_opts::attach_code(j).ok_or_else(|| bad("mtext", "`justify` must be TL, TC, TR, ML, MC, MR, BL, BC or BR"))?,
         None => p.get("attach").and_then(Value::as_u64).unwrap_or(1).clamp(1, 9) as u8,
     };
+    let width = f64_or(p, "width", 0.0).max(0.0);
     let k = EntityKind::MText(MText {
         insert: v3(at),
         height,
-        width: f64_or(p, "width", 0.0).max(0.0),
+        width,
         attach,
         rotation: f64_or(p, "rotation", 0.0).to_radians(),
         style,
-        contents: text.replace('\n', "\\P"),
+        contents: super::mtext_opts::json_paragraphs(p, text.replace('\n', "\\P"), height)?,
         line_spacing: f64_or(p, "lineSpacing", 1.0),
         line_spacing_exact: bool_or(p, "lineSpacingExact", false),
+        columns: super::mtext_opts::json_columns(p, height, width)?,
     });
     added(s.add_entity(k)?)
 }
@@ -419,7 +428,21 @@ impl Interactive for LineM {
             && let Some(first) = self.first
         {
             match i {
-                Input::Point(p) => return self.resolve_first(s, first, snap::LineEnd::Point(p)),
+                Input::Point(p) => {
+                    // A deferred TAN first point with a typed `@d<a` next point: resolve
+                    // exactly from the direction and distance the user gave.
+                    if let Some((dist, ang)) = s.last_polar.take()
+                        && let Some(t) = snap::tangent_point_in_direction(&first.curve, ang, first.at)
+                    {
+                        let e = t + Vec2::new(ang.cos(), ang.sin()) * dist;
+                        self.handles.push(s.add_entity(line(t, e))?);
+                        self.pts = vec![t, e];
+                        s.last_point = e;
+                        self.first = None;
+                        return Ok(Step::Continue);
+                    }
+                    return self.resolve_first(s, first, snap::LineEnd::Point(p));
+                }
                 Input::Deferred(d) => return self.resolve_first(s, first, snap::LineEnd::Deferred(d)),
                 _ => {}
             }
@@ -771,6 +794,9 @@ impl Interactive for CircleM {
                 Ok(Step::Continue)
             }
             Input::Point(p) => {
+                if self.mode == 0 && self.pts.first().is_some_and(|c| c.near(p, 1e-12)) {
+                    return Err(crate::EngineError::Other("Value must be positive and nonzero.".into()));
+                }
                 self.pts.push(p);
                 let done = match self.mode {
                     0 if self.pts.len() == 2 => {
@@ -886,6 +912,9 @@ impl Interactive for PolygonM {
         let n = self.sides.unwrap_or(4);
         if self.edge {
             if let Input::Point(p) = i {
+                if self.edge_pts.first().is_some_and(|a| a.near(p, 1e-12)) {
+                    return Err(crate::EngineError::Other("Edge endpoints must differ.".into()));
+                }
                 self.edge_pts.push(p);
                 if self.edge_pts.len() == 2 {
                     s.add_entity(lwpoly(polygon_from_edge(self.edge_pts[0], self.edge_pts[1], n), true))?;
@@ -908,11 +937,17 @@ impl Interactive for PolygonM {
                 s.last_used.polygon_circumscribed = !ins;
             }
             (Some(c), Some(ins), Input::Point(p)) => {
+                if c.near(p, 1e-12) {
+                    return Err(crate::EngineError::Other("Value must be positive and nonzero.".into()));
+                }
                 s.add_entity(lwpoly(polygon_vertices(c, n, p, ins), true))?;
                 return Ok(Step::Done);
             }
             (Some(c), Some(ins), Input::Text(t)) => {
                 let r = number(&t).ok_or_else(|| crate::EngineError::Other("Requires numeric distance or point.".into()))?;
+                if !r.is_finite() || r <= 0.0 {
+                    return Err(crate::EngineError::Other("Value must be positive and nonzero.".into()));
+                }
                 let rp = polygon_typed_radius_point(c, n, r, ins);
                 s.add_entity(lwpoly(polygon_vertices(c, n, rp, ins), true))?;
                 return Ok(Step::Done);
@@ -949,6 +984,8 @@ struct EllipseM {
     /// The `Parameter` option: arc start/end values are ellipse parameters, not true angles.
     param: bool,
     start: Option<f64>,
+    /// The Isocircle option (isometric snap style) in progress.
+    iso: Option<super::settings::iso::IsoCircle>,
 }
 
 impl EllipseM {
@@ -999,7 +1036,7 @@ impl Interactive for EllipseM {
     fn name(&self) -> &'static str {
         "ELLIPSE"
     }
-    fn prompt(&self, _s: &Session) -> Prompt {
+    fn prompt(&self, s: &Session) -> Prompt {
         if let Some(e) = &self.ellipse {
             let msg = match (self.start.is_none(), self.param) {
                 (true, false) => "Specify start angle",
@@ -1009,7 +1046,11 @@ impl Interactive for EllipseM {
             };
             return Prompt::new(msg, Accept::POINT_OR_NUMBER).kw(if self.param { &["Angle"] } else { &["Parameter"] }).base(e.center);
         }
+        if let Some(iso) = &self.iso {
+            return iso.prompt();
+        }
         match (self.center_mode, self.pts.len()) {
+            (false, 0) if s.settings.isodraft => Prompt::new("Specify axis endpoint of ellipse", Accept::POINT).kw(&["Arc", "Center", "Isocircle"]),
             (false, 0) => Prompt::new("Specify axis endpoint of ellipse", Accept::POINT).kw(&["Arc", "Center"]),
             (false, 1) => Prompt::new("Specify other endpoint of axis", Accept::POINT).base_opt(self.pts.first().copied()),
             (true, 0) => Prompt::new("Specify center of ellipse", Accept::POINT),
@@ -1061,7 +1102,14 @@ impl Interactive for EllipseM {
                 }
             }
         }
+        if let Some(iso) = &mut self.iso {
+            return match iso.input(s, i)? {
+                Some(e) => self.place(s, e),
+                None => Ok(Step::Continue),
+            };
+        }
         match i {
+            Input::Keyword(k) if k == "Isocircle" && self.pts.is_empty() => self.iso = Some(Default::default()),
             Input::Keyword(k) if k == "Center" => self.center_mode = true,
             Input::Keyword(k) if k == "Arc" => self.arc_mode = true,
             Input::Keyword(k) if k == "Rotation" && self.pts.len() == 2 => self.rotation = true,
@@ -1097,7 +1145,10 @@ impl Interactive for EllipseM {
         }
         Ok(Step::Continue)
     }
-    fn preview(&self, _s: &Session, c: Vec2) -> Vec<EntityKind> {
+    fn preview(&self, s: &Session, c: Vec2) -> Vec<EntityKind> {
+        if let Some(iso) = &self.iso {
+            return iso.preview(s, c).map(|e| super::settings::iso::ellipse_entity(&e)).into_iter().collect();
+        }
         if self.pts.len() < 2 {
             return self.pts.first().map(|a| vec![line(*a, c)]).unwrap_or_default();
         }
@@ -1387,11 +1438,22 @@ struct TextM {
     justify: (HAlign, VAlign),
     asking_justify: bool,
     line: usize,
+    /// Run by a LISP routine (`command`): one line of text ends the command, as AutoLISP's
+    /// `command` runs TEXT; typed and in scripts each line asks for the next.
+    single_line: bool,
 }
 
 impl TextM {
-    fn new(_s: &Session) -> Self {
-        TextM { at: None, height: None, rotation: None, justify: (HAlign::Left, VAlign::Baseline), asking_justify: false, line: 0 }
+    fn new(s: &Session) -> Self {
+        TextM {
+            at: None,
+            height: None,
+            rotation: None,
+            justify: (HAlign::Left, VAlign::Baseline),
+            asking_justify: false,
+            line: 0,
+            single_line: s.lisp_running(),
+        }
     }
 }
 
@@ -1414,11 +1476,10 @@ impl Interactive for TextM {
     }
     fn begin(&mut self, s: &mut Session) -> Result<Step> {
         let d = s.doc()?;
-        let msg = format!(
-            "Current text style:  \"{}\"  Text height:  {:.4}  Annotative:  No  Justify:  Left",
-            d.header.str("TEXTSTYLE", "Standard"),
-            d.header.f64("TEXTSIZE", 0.2)
-        );
+        let style = d.header.str("TEXTSTYLE", "Standard");
+        let anno = if d.text_style(&style).is_some_and(|st| st.annotative) { "Yes" } else { "No" };
+        let msg =
+            format!("Current text style:  \"{style}\"  Text height:  {:.4}  Annotative:  {anno}  Justify:  Left", d.header.f64("TEXTSIZE", 0.2));
         s.echo(msg);
         Ok(Step::Continue)
     }
@@ -1453,6 +1514,9 @@ impl Interactive for TextM {
                 let k = make_text(s, at, &t, h, r, self.justify);
                 s.add_entity(k)?;
                 self.line += 1;
+                if self.single_line {
+                    return Ok(Step::Done);
+                }
             }
             (Some(_), Some(_), Some(_), Input::Enter) => return Ok(Step::Done),
             _ => {}
@@ -1487,7 +1551,13 @@ impl Interactive for MTextM {
     }
     fn begin(&mut self, s: &mut Session) -> Result<Step> {
         self.opts = super::mtext_opts::MTextOpts::new(s);
-        s.echo(format!("Current text style:  \"{}\"  Text height:  {:.4}  Annotative:  No", self.opts.style, self.opts.height));
+        let anno = s.doc()?.text_style(&self.opts.style).is_some_and(|st| st.annotative);
+        s.echo(format!(
+            "Current text style:  \"{}\"  Text height:  {:.4}  Annotative:  {}",
+            self.opts.style,
+            self.opts.height,
+            if anno { "Yes" } else { "No" }
+        ));
         Ok(Step::Continue)
     }
     fn prompt(&self, _s: &Session) -> Prompt {
@@ -1531,6 +1601,10 @@ impl Interactive for MTextM {
             _ => {}
         }
         Ok(Step::Continue)
+    }
+    fn editing_mtext(&self) -> Option<MText> {
+        let a = self.first?;
+        (self.boxed() && self.ask.is_none()).then(|| self.opts.mtext(a, self.second, String::new()))
     }
     fn preview(&self, _s: &Session, c: Vec2) -> Vec<EntityKind> {
         match (self.first, self.boxed(), self.ask) {

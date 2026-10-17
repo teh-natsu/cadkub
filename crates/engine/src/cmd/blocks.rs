@@ -1,5 +1,7 @@
-//! Blocks: BLOCK, INSERT, ATTDEF, ATTEDIT (programmatic), WBLOCK, BASE, PURGE, block listing.
+//! Blocks: BLOCK, INSERT, ATTDEF, ATTEDIT (programmatic), WBLOCK, BASE, PURGE, block listing, the
+//! Block Editor.
 
+pub(crate) mod bedit;
 mod purge;
 
 use std::sync::Arc;
@@ -14,13 +16,16 @@ use super::*;
 use crate::{Accept, EngineError, Input, Interactive, Prompt, Result, Session, Step};
 
 mod attedit;
+mod dyngrip;
+mod extract;
+pub(crate) mod refedit;
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("block", "Make...", run_block)
             .menu(&["Draw", "Block", "Make..."])
             .alias(&["b", "bmake"])
-            .params("{name, base: [x,y], handles?, keep?: \"convert\"|\"retain\"|\"delete\" (default \"convert\"), description?}")
+            .params("{name, base: [x,y], handles?, keep?: \"convert\"|\"retain\"|\"delete\" (default \"convert\"), description?, annotative?}")
             .interactive(|_| Ok(Box::new(BlockM::default()))),
         // -BLOCK erases the selected objects once the block is defined.
         CommandSpec::new("-block", "Create Block", run_dash_block)
@@ -41,18 +46,40 @@ pub fn specs() -> Vec<CommandSpec> {
         attedit::dash_attedit_spec(),
         CommandSpec::new("wblock", "Write Block", run_wblock).alias(&["w"]).params("{path, name? | handles?, base?}"),
         CommandSpec::new("base", "Base", run_base).menu(&["Draw", "Block", "Base"]).params("{at: [x,y]}"),
+        CommandSpec::new("blocks.dynamic", "Dynamic Block Data", run_dynamic)
+            .params("{name (a block, or \"*Model_Space\" for a drawing that is a dynamic block's own)} → {parameters, actions, other} | null (not a dynamic block)")
+            .enabled(has_doc)
+            .noundo(),
+        CommandSpec::new("blocks.reference", "Dynamic Block Reference", run_reference)
+            .params("{handle (a block reference)} → {definition, values (by parameter graph id), properties: [{name, value, choices}]} | null (not a dynamic block reference)")
+            .enabled(has_doc)
+            .noundo(),
+        CommandSpec::new("blocks.reference.set", "Set Dynamic Property", run_reference_set)
+            .params("{handle (a dynamic block reference), name (a custom property as Properties names it: a visibility state, a lookup, a distance or \"Position1 X\"), value (lengths in drawing units)} → {properties}")
+            .enabled(has_doc),
+        CommandSpec::new("blocks.reference.grips", "Dynamic Block Grips", dyngrip::run_grips)
+            .params("{handle} → [{node, part: base|end|at, shape: linear|point|list, at: [x,y], dir: [x,y], property, choices?}] (empty: not a dynamic block reference)")
+            .enabled(has_doc)
+            .noundo(),
+        CommandSpec::new("blocks.reference.grip", "Drag Dynamic Grip", dyngrip::run_grip)
+            .params("{handle, node (the parameter's graph id), part: base|end|at, to: [x,y] (drawing coordinates)} → {properties}: a distance's arrow changes the distance (snapped to its values), a position's square moves it")
+            .enabled(has_doc),
         CommandSpec::new("purge", "Purge", purge::run)
             .alias(&["pu", "-purge"])
             .params("{type?: all|blocks|dimstyles|groups|layers|linetypes|mleaderstyles|tablestyles|textstyles|zerolength|emptytext (default all: every named type), names?: \"A*,B\" (default *)} → purged")
             .interactive(|_| Ok(Box::new(purge::PurgeM::default()))),
         CommandSpec::new("blocks.list", "List Blocks", run_list).enabled(has_doc).noundo(),
-        CommandSpec::new("battman", "Block Attribute Manager...", run_battman)
-            .menu(&["Modify", "Object", "Attribute", "Block Attribute Manager..."])
-            .params("{name}")
-            .noundo(),
+        battman::battman_spec(),
         attribs::attdisp_spec(),
         attribs::attsync_spec(),
+        extract::dataextraction_spec(),
+        extract::eattext_spec(),
     ]
+    .into_iter()
+    .chain(xref::specs())
+    .chain(refedit::specs())
+    .chain(bedit::specs())
+    .collect()
 }
 
 fn valid_block_name(n: &str) -> bool {
@@ -93,6 +120,9 @@ pub(crate) fn make_block(s: &mut Session, name: &str, base: Vec2, hs: &[Handle],
     }
     if references_block(d, &ents, name) {
         return Err(bad("block", format!("Block \"{name}\" references itself.")));
+    }
+    if d.refedit.as_ref().is_some_and(|r| r.block.eq_ignore_ascii_case(name)) {
+        return Err(bad("block", format!("Block \"{name}\" is being edited in place; finish with REFCLOSE first.")));
     }
     // Block names are case-insensitive: redefining keeps the existing definition's name.
     let name = d.blocks.keys().find(|k| k.eq_ignore_ascii_case(name)).cloned().unwrap_or_else(|| name.to_string());
@@ -177,6 +207,8 @@ pub(crate) fn insert_with(
                 constant: false,
                 prompt: String::new(),
                 props: Default::default(),
+                multiline: ad.multiline.as_ref().map(|ml| ml.transformed(&m)),
+                modes: ad.modes.for_reference(),
             });
         }
     }
@@ -189,6 +221,17 @@ fn run_block(s: &mut Session, p: &Value) -> Result<Value> {
     let hs = targets(s, p)?;
     let keep = str_param(p, "keep").unwrap_or("convert").to_string();
     let r = make_block(s, &name, base, &hs, &keep, str_param(p, "description").unwrap_or(""))?;
+    // An annotative block: its references (the converted selection too) are annotative.
+    if bool_or(p, "annotative", false) {
+        let d = s.doc_mut()?;
+        let cur = d.current_anno_scale();
+        if let Some(b) = d.blocks.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(&name)).map(|(_, b)| b) {
+            Arc::make_mut(b).annotative = true;
+        }
+        if let Some(h) = r {
+            d.modify_entity(h, |e| cadcraft_doc::set_annotative(e, true, &cur))?;
+        }
+    }
     Ok(json!({ "block": name, "insert": r.map(|h| h.hex()) }))
 }
 
@@ -211,7 +254,9 @@ fn run_insert(s: &mut Session, p: &Value) -> Result<Value> {
     let vals = p.get("attribs").and_then(Value::as_object).cloned().unwrap_or_default();
     let h = insert_with(s, &name, at, scale, rot, point_param(p, "basePoint"), &vals)?;
     if bool_or(p, "explode", false) {
-        return s.execute("explode", &json!({ "handles": [h.hex()] }));
+        // The EXPLODE command body, not `execute`: INSERT records the one undo step.
+        let explode = find_command("explode").ok_or_else(|| EngineError::UnknownCommand("explode".into()))?;
+        return (explode.run)(s, &json!({ "handles": [h.hex()] }));
     }
     Ok(attedit::with_unknown_tags(s, h, &vals, json!({ "handle": h.hex() })))
 }
@@ -236,6 +281,8 @@ fn attdef_kind(s: &Session, tag: &str, prompt: &str, default: &str, at: Vec2, he
         constant: false,
         prompt: prompt.into(),
         props: Default::default(),
+        multiline: None,
+        modes: Default::default(),
     })
 }
 
@@ -305,26 +352,61 @@ fn run_base(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn run_list(s: &mut Session, _p: &Value) -> Result<Value> {
     let d = s.doc()?;
-    Ok(
-        json!({ "blocks": d.blocks.values().filter(|b| !b.anonymous).map(|b| json!({"name": b.name, "entities": b.entities.len(), "base": [b.base.x, b.base.y], "description": b.description})).collect::<Vec<_>>() }),
-    )
+    let block = |b: &Block| {
+        let dynamic = cadcraft_doc::dynblock::dynamic_block(d, &b.name).is_some();
+        json!({"name": b.name, "entities": b.entities.len(), "base": [b.base.x, b.base.y], "description": b.description, "dynamic": dynamic})
+    };
+    Ok(json!({ "blocks": d.blocks.values().filter(|b| !b.anonymous).map(|b| block(b)).collect::<Vec<_>>() }))
 }
 
-fn run_battman(s: &mut Session, p: &Value) -> Result<Value> {
-    let name = str_param(p, "name").ok_or_else(|| bad("battman", "`name` is required"))?;
-    let b = s.doc()?.block(name).cloned().ok_or_else(|| bad("battman", "no such block"))?;
-    let atts: Vec<Value> = b
-        .entities
-        .iter()
-        .filter_map(|e| {
-            if let EntityKind::AttDef(a) = &e.kind {
-                Some(json!({"tag": a.tag, "prompt": a.prompt, "default": a.text.value, "invisible": a.invisible}))
-            } else {
-                None
-            }
-        })
-        .collect();
-    Ok(json!({ "block": name, "attributes": atts }))
+/// A dynamic block's parameters and actions as read from the file (null for a block that has
+/// none).
+fn run_dynamic(s: &mut Session, p: &Value) -> Result<Value> {
+    let name = str_param(p, "name").ok_or_else(|| bad("blocks.dynamic", "`name` is required"))?;
+    let d = s.doc()?;
+    if d.block(name).is_none() && !name.trim().eq_ignore_ascii_case("*Model_Space") {
+        return Err(bad("blocks.dynamic", format!("no block `{name}`")));
+    }
+    serde_json::to_value(cadcraft_doc::dynblock::dynamic_block(d, name)).map_err(|e| bad("blocks.dynamic", e.to_string()))
+}
+
+/// The dynamic block a block reference shows, the values it was given and its custom properties
+/// (null for any other reference).
+fn run_reference(s: &mut Session, p: &Value) -> Result<Value> {
+    let h = super::curves::handle_param(p, "handle").ok_or_else(|| bad("blocks.reference", "`handle` is required"))?;
+    let d = s.doc()?;
+    match d.entity(h).map(|e| &e.kind) {
+        Some(EntityKind::Insert(_)) => {}
+        Some(_) => return Err(bad("blocks.reference", "`handle` is not a block reference")),
+        None => return Err(bad("blocks.reference", format!("no object {}", h.hex()))),
+    }
+    let (Some(r), Some((_, properties))) = (cadcraft_doc::dynblock::reference(d, h), cadcraft_doc::dynblock::custom_properties(d, h)) else {
+        return Ok(Value::Null);
+    };
+    Ok(json!({ "definition": r.definition, "values": r.values, "properties": properties }))
+}
+
+/// Change a custom property of a dynamic block reference (one undo step).
+fn run_reference_set(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "blocks.reference.set";
+    let h = super::curves::handle_param(p, "handle").ok_or_else(|| bad(cmd, "`handle` is required"))?;
+    let name = str_param(p, "name").ok_or_else(|| bad(cmd, "`name` is required"))?;
+    let value = match p.get("value") {
+        Some(Value::String(v)) => v.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => return Err(bad(cmd, "`value` is required")),
+    };
+    if !matches!(s.doc()?.entity(h).map(|e| &e.kind), Some(EntityKind::Insert(_))) {
+        return Err(bad(cmd, "`handle` is not a block reference"));
+    }
+    if super::curves::is_locked(s, h) {
+        return Err(bad(cmd, "the reference is on a locked layer"));
+    }
+    let mut d = s.doc()?.clone();
+    cadcraft_doc::dynblock::set_property(&mut d, h, name, &value).map_err(|e| bad(cmd, e))?;
+    let properties = cadcraft_doc::dynblock::custom_properties(&d, h).map(|(_, p)| p).unwrap_or_default();
+    *s.doc_mut()? = d;
+    Ok(json!({ "properties": properties }))
 }
 
 // ---------------- interactive ----------------
@@ -424,6 +506,7 @@ impl BlockM {
 }
 
 mod insert_file;
+pub(crate) mod xref;
 
 /// Where the command-line INSERT is in its prompt sequence.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -759,3 +842,4 @@ impl Interactive for AttdefM {
 }
 
 mod attribs;
+mod battman;

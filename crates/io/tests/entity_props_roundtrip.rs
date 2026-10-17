@@ -74,7 +74,7 @@ fn hatch(pattern: &str, gradient: Option<Gradient>) -> Hatch {
     Hatch {
         pattern: pattern.into(),
         solid: pattern == "SOLID",
-        loops: vec![HatchLoop { vertices: square(10.0), outer: true }],
+        loops: vec![HatchLoop { vertices: square(10.0), outer: true, sources: Vec::new() }],
         scale: 2.0,
         angle: 0.25,
         associative: false,
@@ -177,18 +177,18 @@ fn builtin_font_name_roundtrips_and_other_readers_get_txt() {
     assert_eq!(r.text_styles.iter().find(|s| s.name == "Standard").map(|s| s.font.as_str()), Some("isocp.shx"));
 }
 
-/// A style from the upstream app names the built-in font "CADCraft Stroke"; saving keeps that
+/// A style from the upstream app names the built-in font by its own name; saving keeps that
 /// name for the upstream app and still writes `txt` for other readers.
 #[test]
 fn upstream_built_in_font_name_saves_as_txt_and_keeps_its_name() {
     let mut d = Drawing::new_metric();
-    d.text_styles.push(TextStyle { name: "FromUpstream".into(), font: "CADCraft Stroke".into(), ..TextStyle::default() });
+    d.text_styles.push(TextStyle { name: "FromUpstream".into(), font: concat!("CAD", "Craft Stroke").into(), ..TextStyle::default() });
     let text = write_dxf(&d);
     let g = groups(&text);
     let at = g.iter().position(|(c, v)| *c == 2 && v == "FromUpstream").expect("style");
     assert_eq!(g.iter().skip(at).find(|(c, _)| *c == 3).map(|(_, v)| v.as_str()), Some("txt"));
     let r = read_dxf(text.as_bytes()).expect("reopen");
-    assert_eq!(r.text_styles.iter().find(|s| s.name == "FromUpstream").map(|s| s.font.as_str()), Some("CADCraft Stroke"));
+    assert_eq!(r.text_styles.iter().find(|s| s.name == "FromUpstream").map(|s| s.font.as_str()), Some(concat!("CAD", "Craft Stroke")));
 }
 
 /// The (code, value) pairs of a DXF text.

@@ -22,7 +22,7 @@ pub(crate) struct Guarded {
     broken: Cell<Option<&'static str>>,
 }
 
-fn message(p: &(dyn Any + Send)) -> String {
+pub(crate) fn message(p: &(dyn Any + Send)) -> String {
     p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "panic".into())
 }
 
@@ -31,6 +31,11 @@ impl Guarded {
     pub(crate) fn create(id: &str, factory: Factory, s: &Session) -> Result<Box<dyn Interactive>> {
         let inner = catch_unwind(AssertUnwindSafe(|| factory(s))).map_err(|p| EngineError::Internal(id.into(), message(&*p)))??;
         Ok(Box::new(Guarded { inner, broken: Cell::new(None) }))
+    }
+
+    /// Wrap a machine created by other means (the hot-grip edit).
+    pub(crate) fn wrap(inner: Box<dyn Interactive>) -> Box<dyn Interactive> {
+        Box::new(Guarded { inner, broken: Cell::new(None) })
     }
 
     fn internal(&self, p: &(dyn Any + Send)) -> EngineError {
@@ -68,6 +73,24 @@ impl Interactive for Guarded {
         catch_unwind(AssertUnwindSafe(|| self.inner.preview(s, cursor))).unwrap_or_else(|_| {
             self.broken.set(Some("panic in preview"));
             Vec::new()
+        })
+    }
+    fn drag(&self, s: &Session, cursor: Vec2) -> Option<crate::prompt::Drag> {
+        if self.broken.get().is_some() {
+            return None;
+        }
+        catch_unwind(AssertUnwindSafe(|| self.inner.drag(s, cursor))).unwrap_or_else(|_| {
+            self.broken.set(Some("panic in preview"));
+            None
+        })
+    }
+    fn editing_mtext(&self) -> Option<cadcraft_doc::MText> {
+        if self.broken.get().is_some() {
+            return None;
+        }
+        catch_unwind(AssertUnwindSafe(|| self.inner.editing_mtext())).unwrap_or_else(|_| {
+            self.broken.set(Some("panic in prompt"));
+            None
         })
     }
 }

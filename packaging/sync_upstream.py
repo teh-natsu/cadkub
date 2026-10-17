@@ -42,9 +42,11 @@ LOWER = re.compile(r"cadcraft(?![-_](?:" + "|".join(c.replace("-", "[-_]") for c
 # is data shared with CADCraft (the DXF xdata application CADCRAFT, the CADCRAFT_CONSTRAINTS
 # dictionary entry, CADCRAFT_* header variables) and stays, so drawings open in both apps.
 ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MAINTAINER", "NO_NATIVE_MENU", "REQUIRE_WINRES",
-            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR"]
+            "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR",
+            "DRAFTING_SHOTS", "LISP_CORPUS", "MEASURE_SHOTS"]
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
-DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES", "CADCRAFT_PLOTSTYLES"}
+DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES", "CADCRAFT_PLOTSTYLES",
+            "CADCRAFT_ANNOTATION", "CADCRAFT_HANDSEED", "CADCRAFT_MLEADERSTYLE"}
 
 # Credits to upstream that must keep the CADCraft name, and the cadcraft prefix shared by the
 # library crates.
@@ -57,8 +59,8 @@ PROTECTED = [
     "`cadcraft-`",
     "cadcraft*",
     "cadcraft_ui*",
-    # CADCraft's name for the built-in font, which CadKub reads as its own (DXF files).
-    "CADCraft Stroke",
+    # A test-only LISP built-in, defined in upper case (CADCRAFT-TEST-PANIC), which isn't renamed.
+    "cadcraft-test-panic",
     # The marker of plot style table files (.json), shared with CADCraft.
     "cadcraftPlotStyleTable",
 ]
@@ -151,6 +153,33 @@ def tracked_text():
             continue
 
 
+# Interface strings that only upstream shows (the ArtCraft Discord item and About links): their
+# translations are dropped from the catalogs, so no ArtCraft text ships in CadKub.
+DROP_STRINGS = {
+    "Join the ArtCraft Discord…",
+    "Join us on Discord",
+    "One of the Crafting Apps by the ArtCraft team and community.",
+}
+
+
+def drop_upstream_strings():
+    dropped = []
+    folder = os.path.join(ROOT, "crates", "ui-egui", "src", "i18n")
+    if not os.path.isdir(folder):
+        return dropped
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".tsv"):
+            continue
+        path = os.path.join(folder, name)
+        raw = open(path, encoding="utf-8", newline="").read()
+        lines = raw.split(chr(10))
+        kept = [l for l in lines if l.rstrip(chr(13)).split(chr(9))[1:2] not in ([d] for d in DROP_STRINGS)]
+        if len(kept) != len(lines):
+            open(path, "w", encoding="utf-8", newline="").write(chr(10).join(kept))
+            dropped.append(f"{name} ({len(lines) - len(kept)})")
+    return dropped
+
+
 def branding_left():
     found = []
     for rel, text in tracked_text():
@@ -174,12 +203,15 @@ def unknown_upper_names():
 
 
 edited, moves = rebrand()
+dropped = drop_upstream_strings()
 # The new names change line lengths: let rustfmt rewrap (skipped when Rust isn't installed).
 try:
     subprocess.run(["cargo", "fmt", "--all"], cwd=ROOT, check=True)
 except (OSError, subprocess.CalledProcessError) as e:
     print(f"cargo fmt skipped: {e}")
 print(f"renamed text in {len(edited)} files, moved {len(moves)} paths")
+if dropped:
+    print("dropped upstream-only strings from: " + ", ".join(dropped))
 for f in edited:
     print(f"  edited  {f}")
 for old, new in moves.items():

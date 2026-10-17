@@ -46,6 +46,7 @@ fn dimensions_take_the_viewport_layer_colour() {
         block: None,
         overrides: Default::default(),
         assoc: Vec::new(),
+        marks: Default::default(),
     };
     d.add(&Space::Model, on("A"), EntityKind::Dimension(dim)).unwrap();
     d.add(&Space::Model, on("A"), EntityKind::Line(Line { a: Vec3::new(0.0, -1.0, 0.0), b: Vec3::new(10.0, -1.0, 0.0) })).unwrap();
@@ -59,6 +60,8 @@ fn dimensions_take_the_viewport_layer_colour() {
         locked: false,
         frozen_layers: Vec::new(),
         layer_colors: vec![("a".into(), Color::Index(3))],
+        clip: None,
+        on: true,
     };
     d.add(&Space::Paper("Layout1".into()), Common::default(), EntityKind::Viewport(vp)).unwrap();
     let l = build(&d, &Space::Paper("Layout1".into()), &Options::default());
@@ -110,7 +113,16 @@ fn text(x: f64, value: &str) -> Text {
 }
 
 fn attdef(handle: u64, tag: &str, x: f64, common: Common) -> Entity {
-    let a = Attrib { tag: tag.into(), text: text(x, tag), invisible: false, constant: false, prompt: String::new(), props: Default::default() };
+    let a = Attrib {
+        tag: tag.into(),
+        text: text(x, tag),
+        invisible: false,
+        constant: false,
+        prompt: String::new(),
+        props: Default::default(),
+        multiline: None,
+        modes: Default::default(),
+    };
     Entity { common, ..Entity::new(Handle(handle), EntityKind::AttDef(a)) }
 }
 
@@ -143,6 +155,8 @@ fn attributes_draw_with_their_own_properties() {
             constant: false,
             prompt: String::new(),
             props: Default::default(),
+            multiline: None,
+            modes: Default::default(),
         })
         .to_vec();
     let ins = Insert {
