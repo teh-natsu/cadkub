@@ -2,13 +2,18 @@
 //! Updates… (desktop only; the web build is always the latest). The flow itself is
 //! `craft_update::updater::Updater`.
 
-use craft_update::suite::CADCRAFT;
+use craft_update::App;
 use craft_update::updater::{Action, Status, Updater};
 
 use crate::CadApp;
 
 /// The version this build reports to the update check.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// CadKub as its releases know it. The update check, the prompt's download link and "Update and
+/// Restart" only ever use github.com/teh-natsu/cadkub and its `cadkub-<version>-…` assets: the
+/// upstream app's entry in `craft_update::suite` would offer and install the upstream app.
+pub const APP: App = App::new("cadkub", "CadKub", "Computer-aided design and drafting", "teh-natsu/cadkub");
 
 /// What the update check and prompt are doing between frames.
 pub struct Runtime {
@@ -21,7 +26,7 @@ pub struct Runtime {
 
 impl Default for Runtime {
     fn default() -> Self {
-        Self { updater: Updater::new(&CADCRAFT, VERSION), enabled: false, check_requested: false }
+        Self { updater: Updater::new(&APP, VERSION), enabled: false, check_requested: false }
     }
 }
 
@@ -67,5 +72,17 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
         // process has exited.
         Action::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         Action::None => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Updates come only from CadKub's own releases, whose assets packaging names `cadkub-…`.
+    #[test]
+    fn updates_come_from_cadkub_releases() {
+        assert_eq!(super::APP.repo, "teh-natsu/cadkub");
+        assert_eq!(super::APP.releases_url(), "https://github.com/teh-natsu/cadkub/releases");
+        assert_eq!(super::APP.stems().collect::<Vec<_>>(), ["cadkub"]);
+        assert_eq!(super::APP.name, "CadKub");
     }
 }
