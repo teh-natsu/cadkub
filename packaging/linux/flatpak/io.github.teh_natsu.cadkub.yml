@@ -50,6 +50,8 @@ modules:
       - install -Dm644 packaging/linux/io.github.teh_natsu.cadkub.desktop /app/share/applications/io.github.teh_natsu.cadkub.desktop
       - install -Dm644 packaging/linux/io.github.teh_natsu.cadkub.mime.xml /app/share/mime/packages/io.github.teh_natsu.cadkub.xml
       - mkdir -p /app/share/icons && cp -R assets/app-icon/hicolor /app/share/icons/
+      - install -Dm644 NOTICE /app/share/doc/cadkub/NOTICE
+      - install -Dm644 ATTRIBUTION.md /app/share/doc/cadkub/ATTRIBUTION.md
       - >-
         version=$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml);
         install -d /app/share/metainfo;

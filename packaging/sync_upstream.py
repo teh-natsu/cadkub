@@ -43,7 +43,7 @@ LOWER = re.compile(r"cadcraft(?![-_](?:" + "|".join(c.replace("-", "[-_]") for c
 # dictionary entry, CADCRAFT_* header variables) and stays, so drawings open in both apps.
 ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MAINTAINER", "NO_NATIVE_MENU", "REQUIRE_WINRES",
             "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR",
-            "DRAFTING_SHOTS", "LISP_CORPUS", "MEASURE_SHOTS"]
+            "DRAFTING_SHOTS", "LISP_CORPUS", "MEASURE_SHOTS", "ALIAS_SHOTS", "HIGHLIGHT_SHOTS", "SELECTION_SHOTS"]
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
 DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES", "CADCRAFT_PLOTSTYLES",
             "CADCRAFT_ANNOTATION", "CADCRAFT_HANDSEED", "CADCRAFT_MLEADERSTYLE"}

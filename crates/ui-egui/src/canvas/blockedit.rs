@@ -11,7 +11,7 @@ use crate::CadApp;
 use crate::theme::Tokens;
 
 fn id() -> egui::Id {
-    egui::Id::new("cadkub-block-editor-bar")
+    egui::Id::unique("cadkub-block-editor-bar")
 }
 
 /// The block the Block Editor is editing in the drawing shown, and whether it has unsaved changes.
