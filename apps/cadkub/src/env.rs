@@ -107,7 +107,7 @@ mod tests {
             asked.borrow_mut().push(k.to_owned());
             None
         });
-        let ours: Vec<String> = asked.into_inner().into_iter().filter(|k| k.starts_with("CADCRAFT_")).collect();
+        let ours: Vec<String> = asked.into_inner().into_iter().filter(|k| k.starts_with("CADKUB_")).collect();
         let help = help();
         let unset = Env::from_vars(|_| None);
         for k in &ours {
