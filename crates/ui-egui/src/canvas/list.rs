@@ -1,5 +1,5 @@
 use super::viewport::{split_viewport, stencil_clip};
-use super::*;
+use super::{Bounds2, CadApp, DisplayList, Handle, ListKey, Rgb, Tokens, Xf, rebuild, same_content};
 
 /// Primitives of `list` sorted by entity handle, built on the first highlight after each list
 /// rebuild. Highlighting the hovered entity used to scan every primitive on every frame: ~2.5 ms
@@ -128,6 +128,7 @@ pub(super) fn ensure_list(app: &mut CadApp, xf: &Xf, views: &[(Bounds2, f64)], c
         // level of detail must hold at the finest one.
         min_dash: 2f64.powi(lod_band) * 2.0,
         text: true,
+        linetypes: true,
         fill: true,
         lineweights: lwdisplay,
         view_height: st.paper_view().height,

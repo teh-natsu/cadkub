@@ -1,5 +1,5 @@
 use super::draw::draw_list;
-use super::*;
+use super::{Bounds2, CadApp, DisplayList, Handle, Kind, Rect, Rgb, Vec2, Xf};
 
 /// The active MSPACE viewport when its contents are drawn apart from the layout's list (see
 /// [`VpContent`]), with its clip outline when it is clipped. A clipped viewport is clipped with
@@ -128,6 +128,7 @@ pub(super) fn ensure_vp_content(app: &mut CadApp, xf_paper: &Xf, ctx: &egui::Con
             tolerance: 2f64.powi(band) * 0.5,
             min_dash: 2f64.powi(band) * 2.0,
             text: true,
+            linetypes: true,
             fill: true,
             lineweights: lwdisplay,
             view_height: st.paper_view().height,

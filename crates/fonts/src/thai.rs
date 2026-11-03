@@ -22,11 +22,6 @@ pub fn is_thai(c: char) -> bool {
     ('\u{0E00}'..='\u{0E7F}').contains(&c)
 }
 
-/// Lines laid out by the complex-script path: right-to-left text, or Thai.
-pub(crate) fn needs_shaping(s: &str) -> bool {
-    crate::bidi::has_rtl(s) || s.chars().any(is_thai)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{TextFont, layout_line, shape_line, text_width};

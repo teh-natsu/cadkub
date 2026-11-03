@@ -5,7 +5,7 @@ use super::draw::entity;
 #[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::PARALLEL_CHUNK;
 use super::pipeline::{Options, style_table, top_ctx, with_point_view};
-use super::*;
+use super::{Bounds2, Builder, Ctx, Drawing, Entity, EntityKind, Handle, MAX_BLOCK_EXPANSION, Mat3, Space, Vec2, clip, paper, pen, plotstyle};
 
 /// Upper bound on viewports drawn per layout (hostile files).
 pub(crate) const MAX_VIEWPORTS: usize = 256;
@@ -174,6 +174,7 @@ fn contents(b: &mut Builder, d: &Drawing, vp: &cadcraft_doc::Viewport, area: Bou
     // The contents are in paper units now: draw their pens before clipping.
     pen::apply(&mut sub.list, unit_mm);
     b.list.expanded = b.list.expanded.saturating_add(sub.list.expanded);
+    b.list.truncated |= sub.list.truncated;
     append_clipped(&mut b.list, &sub.list, clip);
 }
 

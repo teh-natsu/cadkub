@@ -61,23 +61,13 @@ impl PlotterStore {
         }
     }
 
-    /// The `plotters` folder of the CadKub settings directory (`CADKUB_CONFIG_DIR`, else
-    /// the platform's settings directory).
+    /// The `plotters` folder of the CadKub settings directory ([`crate::settings_dir::current`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn settings_folder() -> PlotterStore {
         fn dir() -> std::result::Result<std::path::PathBuf, String> {
-            use std::path::PathBuf;
-            let get = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-            let root = match std::env::var_os("CADKUB_CONFIG_DIR") {
-                Some(r) if !r.is_empty() => Some(PathBuf::from(r)),
-                Some(_) => None,
-                None => match std::env::consts::OS {
-                    "macos" => get("HOME").map(|h| h.join("Library/Application Support/CadKub")),
-                    "windows" => get("APPDATA").map(|r| r.join("CadKub")),
-                    _ => get("XDG_CONFIG_HOME").map(|r| r.join("cadkub")).or_else(|| get("HOME").map(|h| h.join(".config/cadkub"))),
-                },
-            };
-            root.map(|r| r.join("plotters")).ok_or_else(|| "there is no settings folder for plotter configurations".to_string())
+            crate::settings_dir::current()
+                .map(|r| r.join("plotters"))
+                .ok_or_else(|| "there is no settings folder for plotter configurations".to_string())
         }
         /// A plain file name of ours (no separators, no parent references).
         fn file(n: &str) -> std::result::Result<std::path::PathBuf, String> {
@@ -111,9 +101,7 @@ impl PlotterStore {
             write: |n, t| {
                 let p = file(n)?;
                 std::fs::create_dir_all(dir()?).map_err(|e| e.to_string())?;
-                let tmp = p.with_extension("json.cadkub-tmp");
-                std::fs::write(&tmp, t).map_err(|e| format!("{n}: {e}"))?;
-                std::fs::rename(&tmp, &p).map_err(|e| format!("{n}: {e}"))
+                crate::atomic_write::write_atomic(&p, t.as_bytes()).map_err(|e| format!("{n}: {e}"))
             },
             delete: |n| std::fs::remove_file(file(n)?).map_err(|e| format!("{n}: {e}")),
         }

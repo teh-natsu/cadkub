@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    EntityKind, Handle, Input, Interactive, LwPolyline, Mat3, PolyVertex, Prompt, Result, SelOutcome, SelectPhase, Session, Space, Step, Value,
+    curves, json, lwpoly, other, set_kind, str_param, targets,
+};
 
 // =====================================================================================
 // REVERSE / CHSPACE / FLATTEN (select, then act)
@@ -100,6 +103,7 @@ pub(crate) fn flatten_kind(k: &mut EntityKind) {
         EntityKind::Hatch(h) => h.elevation = 0.0,
         EntityKind::Solid(so) | EntityKind::Trace(so) => so.corners.iter_mut().for_each(z),
         EntityKind::Face3d(f) => f.corners.iter_mut().for_each(z),
+        EntityKind::PolyfaceMesh(m) => m.vertices.iter_mut().for_each(z),
         EntityKind::Region(_) => {}
         EntityKind::Image(i) => {
             z(&mut i.insert);
