@@ -44,7 +44,11 @@ LOWER = re.compile(r"cadcraft(?![-_](?:" + "|".join(c.replace("-", "[-_]") for c
 ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MAINTAINER", "NO_NATIVE_MENU", "REQUIRE_WINRES",
             "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR",
             "DRAFTING_SHOTS", "LISP_CORPUS", "MEASURE_SHOTS", "ALIAS_SHOTS", "HIGHLIGHT_SHOTS", "SELECTION_SHOTS",
-            "CORPUS_DIR", "CORPUS_REPORT", "CORPUS_STRICT", "MAX_DXF_TAGS", "QUICKCALC_SHOT"]
+            "CORPUS_DIR", "CORPUS_REPORT", "CORPUS_STRICT", "QUICKCALC_SHOT",
+            "OPTIONS_SHOTS", "SHXPATH"]
+# Upper-case spellings of renamed lower-case names, such as test font files (CADCRAFT-BESIDE for
+# cadcraft-beside.shx); the LISP test built-in keeps its name.
+UPPER_DASHED = re.compile(r"\bCADCRAFT-(?!TEST-PANIC\b)(?=[A-Z])")
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
 DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES", "CADCRAFT_PLOTSTYLES",
             "CADCRAFT_ANNOTATION", "CADCRAFT_HANDSEED", "CADCRAFT_MLEADERSTYLE"}
@@ -64,6 +68,8 @@ PROTECTED = [
     "cadcraft-test-panic",
     # The marker of plot style table files (.json), shared with CADCraft.
     "cadcraftPlotStyleTable",
+    # The DXF tag-limit error and its CADCRAFT_MAX_DXF_TAGS variable come from craft-libs' craft-dxf.
+    "CADCraft reads (set CADCRAFT_MAX_DXF_TAGS",
 ]
 REPLACEMENTS = [
     (r"ai\.storyteller\.cadcraft", r"io\.github\.teh_natsu\.cadkub"),  # in regular expressions
@@ -93,6 +99,7 @@ def rename_text(text, protect=True):
     for old, new in REPLACEMENTS:
         text = text.replace(old, new)
     text = UPPER_ENV.sub("CADKUB_", text)
+    text = UPPER_DASHED.sub("CADKUB-", text)
     text = LOWER.sub("cadkub", text)
     for token, phrase in masks.items():
         text = text.replace(token, phrase)
@@ -203,29 +210,34 @@ def unknown_upper_names():
     return sorted(found)
 
 
-edited, moves = rebrand()
-dropped = drop_upstream_strings()
-# The new names change line lengths: let rustfmt rewrap (skipped when Rust isn't installed).
-try:
-    subprocess.run(["cargo", "fmt", "--all"], cwd=ROOT, check=True)
-except (OSError, subprocess.CalledProcessError) as e:
-    print(f"cargo fmt skipped: {e}")
-print(f"renamed text in {len(edited)} files, moved {len(moves)} paths")
-if dropped:
-    print("dropped upstream-only strings from: " + ", ".join(dropped))
-for f in edited:
-    print(f"  edited  {f}")
-for old, new in moves.items():
-    print(f"  moved   {old} -> {new}")
-unknown = unknown_upper_names()
-if unknown:
-    print("\nCADCRAFT names left as they are (DXF data stays CADCRAFT; an environment variable goes in ENV_VARS):")
-    for name in unknown:
-        print(f"  {name}")
-left = branding_left()
-if left:
-    print(f"\nArtCraft branding to remove by hand ({len(left)}):")
-    for line in left:
-        print(f"  {line}")
-    sys.exit(1)
-print("no ArtCraft branding left")
+def main():
+    edited, moves = rebrand()
+    dropped = drop_upstream_strings()
+    # The new names change line lengths: let rustfmt rewrap (skipped when Rust isn't installed).
+    try:
+        subprocess.run(["cargo", "fmt", "--all"], cwd=ROOT, check=True)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"cargo fmt skipped: {e}")
+    print(f"renamed text in {len(edited)} files, moved {len(moves)} paths")
+    if dropped:
+        print("dropped upstream-only strings from: " + ", ".join(dropped))
+    for f in edited:
+        print(f"  edited  {f}")
+    for old, new in moves.items():
+        print(f"  moved   {old} -> {new}")
+    unknown = unknown_upper_names()
+    if unknown:
+        print("\nCADCRAFT names left as they are (DXF data stays CADCRAFT; an environment variable goes in ENV_VARS):")
+        for name in unknown:
+            print(f"  {name}")
+    left = branding_left()
+    if left:
+        print(f"\nArtCraft branding to remove by hand ({len(left)}):")
+        for line in left:
+            print(f"  {line}")
+        sys.exit(1)
+    print("no ArtCraft branding left")
+
+
+if __name__ == "__main__":
+    main()
