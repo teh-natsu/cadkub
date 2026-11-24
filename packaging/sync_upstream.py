@@ -45,13 +45,15 @@ ENV_VARS = ["BUILD_DATE", "BUILD_SHA", "VERSION", "CONTROL_PORT", "DXF_OUT", "MA
             "CONFIG_DIR", "FONTALT", "FONTFALLBACK", "VSYNC", "WAYLAND", "LOCALE", "SYSTEM_CURSOR",
             "DRAFTING_SHOTS", "LISP_CORPUS", "MEASURE_SHOTS", "ALIAS_SHOTS", "HIGHLIGHT_SHOTS", "SELECTION_SHOTS",
             "CORPUS_DIR", "CORPUS_REPORT", "CORPUS_STRICT", "QUICKCALC_SHOT",
-            "OPTIONS_SHOTS", "SHXPATH"]
+            "OPTIONS_SHOTS", "SHXPATH", "STENCIL", "PROPERTIES_SHOTS", "CAP_HEIGHT", "DIMSTYLE_SHOTS"]
 # Upper-case spellings of renamed lower-case names, such as test font files (CADCRAFT-BESIDE for
 # cadcraft-beside.shx); the LISP test built-in keeps its name.
 UPPER_DASHED = re.compile(r"\bCADCRAFT-(?!TEST-PANIC\b)(?=[A-Z])")
 UPPER_ENV = re.compile(r"\bCADCRAFT_(?=(?:" + "|".join(ENV_VARS) + r")\b)")
 DXF_KEYS = {"CADCRAFT", "CADCRAFT_", "CADCRAFT_CONSTRAINTS", "CADCRAFT_LAYERP", "CADCRAFT_LAYISO", "CADCRAFT_LAYERSTATES", "CADCRAFT_PLOTSTYLES",
-            "CADCRAFT_ANNOTATION", "CADCRAFT_HANDSEED", "CADCRAFT_MLEADERSTYLE"}
+            "CADCRAFT_ANNOTATION", "CADCRAFT_HANDSEED", "CADCRAFT_MLEADERSTYLE",
+            # Header variable and xdata names (and craft-dxf's own tag-limit variable).
+            "CADCRAFT_REVCLOUDMAXARCLEN", "CADCRAFT_UCSNAME", "CADCRAFT_TEST", "CADCRAFT_MAX_DXF_TAGS"}
 
 # Credits to upstream that must keep the CADCraft name, and the cadcraft prefix shared by the
 # library crates.
@@ -81,7 +83,8 @@ REPLACEMENTS = [
 ]
 
 BRANDING = re.compile(r"discord|crafting apps by|getartcraft|artcraft[-_](mark|logo)|docs/brand|Learning Machines|storyteller\.ai|ai\.storyteller", re.I)
-BRANDING_ALLOWED_FILES = {"NOTICE", "README.md", "ROADMAP.md", "LICENSE-MIT", "packaging/sync_upstream.py"}
+# docs/roadmap.md is upstream's progress record (it mentions where feedback came from).
+BRANDING_ALLOWED_FILES = {"NOTICE", "README.md", "ROADMAP.md", "docs/roadmap.md", "LICENSE-MIT", "packaging/sync_upstream.py"}
 
 
 def rename_text(text, protect=True):

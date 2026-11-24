@@ -19,13 +19,13 @@
   <?endif ?>
   <Package
       Name="CadKub"
-      Manufacturer="Nattpol Chaisri"
+      Manufacturer="Nattapol Chaisri"
       Version="$(var.Version)"
       UpgradeCode="F1D01258-BEB4-4A36-AADB-45971B7C565F"
       Scope="perMachine"
       Compressed="yes"
       Language="1033">
-    <SummaryInformation Description="CadKub computer-aided design" Manufacturer="Nattpol Chaisri" />
+    <SummaryInformation Description="CadKub computer-aided design" Manufacturer="Nattapol Chaisri" />
     <!-- Same-version upgrades let successive pre-releases of one X.Y.Z replace each other
          (MSI versions are numeric, so 1.2.3-rc.1 and 1.2.3-rc.2 are both 1.2.3). -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"

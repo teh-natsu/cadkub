@@ -19,27 +19,29 @@ Generated-in-code assets are original and have no file to list:
 - the standard linetype and hatch-pattern libraries (`crates/doc/src/library.rs`; industry-common
   names, our own dash/spacing values);
 - the colour index palette, generated from its structure (`crates/color/src/lib.rs`);
-- the sample drawings (`crates/engine/src/sample.rs`).
+- the sample drawings (`crates/engine/src/sample.rs`);
+- the synthetic two-hexagon hatch logo (`crates/io/tests/it/hatch_loop_flags.rs`, `logo`):
+  original contributor geometry, generated in code from invented points, under MIT OR Apache-2.0.
 
 | Asset | Author | Source | Licence | Notes |
 |---|---|---|---|---|
-| `assets/app-icon/cadkub.svg` | Nattpol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | CadKub app icon master (red panda with a drafted part on a card, on green glass) |
-| `assets/app-icon/cadkub-small.svg` | Nattpol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | simpler variant for 24 px and below |
-| `assets/app-icon/hicolor/scalable/apps/io.github.teh_natsu.cadkub.svg` | Nattpol Chaisri (CadKub owner) | copy of `assets/app-icon/cadkub.svg` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/16x16/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/24x24/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/32x32/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/48x48/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/64x64/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/128x128/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/256x256/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/hicolor/512x512/apps/io.github.teh_natsu.cadkub.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
-| `assets/app-icon/cadkub.icns` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | macOS icon |
-| `assets/app-icon/cadkub.ico` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | Windows icon |
-| `assets/app-icon/cadkub-64.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 |  |
-| `assets/app-icon/cadkub-256.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | runtime window icon |
-| `assets/app-icon/cadkub-1024.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 |  |
-| `assets/app-icon/cadkub-macos-512.png` | Nattpol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | macOS margin variant |
+| `assets/app-icon/cadkub.svg` | Nattapol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | CadKub app icon master (red panda with a drafted part on a card, on green glass) |
+| `assets/app-icon/cadkub-small.svg` | Nattapol Chaisri (CadKub owner) | original work, drawn as plain SVG shapes by `packaging/make_icon.py` | MIT OR Apache-2.0 | simpler variant for 24 px and below |
+| `assets/app-icon/hicolor/scalable/apps/io.github.teh_natsu.cadkub.svg` | Nattapol Chaisri (CadKub owner) | copy of `assets/app-icon/cadkub.svg` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/16x16/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/24x24/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/32x32/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/48x48/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/64x64/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/128x128/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/256x256/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/hicolor/512x512/apps/io.github.teh_natsu.cadkub.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` (`cadkub-small.svg` at 24 px and below) by `packaging/icons.sh` | MIT OR Apache-2.0 | Linux hicolor icon |
+| `assets/app-icon/cadkub.icns` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | macOS icon |
+| `assets/app-icon/cadkub.ico` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | Windows icon |
+| `assets/app-icon/cadkub-64.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 |  |
+| `assets/app-icon/cadkub-256.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | runtime window icon |
+| `assets/app-icon/cadkub-1024.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 |  |
+| `assets/app-icon/cadkub-macos-512.png` | Nattapol Chaisri (CadKub owner) | rendered from `assets/app-icon/cadkub.svg` by `packaging/icons.sh` | MIT OR Apache-2.0 | macOS margin variant |
 | `assets/fonts/Anuphan-Regular.ttf` | The Anuphan Project Authors (Cadson Demak) | https://github.com/google/fonts/tree/main/ofl/anuphan (`Anuphan[wght].ttf`, version 3.002) | SIL Open Font License 1.1 (`assets/fonts/OFL-Anuphan.txt`) | static Regular instance of the variable font, made with fontTools; the UI font for Thai |
 | `assets/fonts/Sarabun-Regular.ttf` | The Sarabun Project Authors (Cadson Demak) | https://github.com/google/fonts/tree/main/ofl/sarabun | SIL Open Font License 1.1 (`assets/fonts/OFL-Sarabun.txt`) | none; sets Thai text in drawings when the text style's font has no Thai letters (`crates/fonts/src/thai.rs`) |
 | `assets/fonts/OFL-Sarabun.txt` | The Sarabun Project Authors | https://github.com/google/fonts/tree/main/ofl/sarabun | SIL Open Font License 1.1 | licence text |
@@ -69,7 +71,7 @@ Generated-in-code assets are original and have no file to list:
 | `crates/ui-egui/src/i18n/bs.tsv` | Nine (@nine-codes) with Claude Code (AI-assisted) | Original Bosnian translations of CadKub English strings, shared with storytold/craft-i18n `locales/bs/` | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied; not yet reviewed by a native speaker |
 | `crates/ui-egui/src/i18n/cs.tsv` | @Losminek (AI-assisted) | Original Czech translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
 | `crates/ui-egui/src/i18n/ru.tsv` | @pechnikov2026-star | Original Russian translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
-| `crates/ui-egui/src/i18n/fr.tsv` | @pechnikov2026-star | Original French translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
+| `crates/ui-egui/src/i18n/fr.tsv` | @pechnikov2026-star; terminology pass by @YannFR81 | Original French translations of CadKub English strings; AI-assisted consistency pass (imperative prompts, cote/espace objet/réseau/présentation) | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
 | `crates/ui-egui/src/i18n/zh.tsv` | @mayloglog | Original Simplified Chinese translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
 | `crates/ui-egui/src/i18n/sv.tsv` | Erik Holmbom (@holmbom) with Claude Code (AI-assisted) | Original Swedish translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied; terminology and the running app reviewed by a native speaker |
 | `crates/ui-egui/src/i18n/it.tsv` | Emanuele Bottelli (AI-assisted); terminology corrections: Andrea Brandi (@starise) with OpenAI Codex (AI-assisted) | Original Italian translations of CadKub English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied; targeted Chamfer terminology review by a native speaker |

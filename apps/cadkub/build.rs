@@ -14,7 +14,7 @@ fn main() {
     }
     res.set("ProductName", "CadKub")
         .set("FileDescription", "CadKub computer-aided design")
-        .set("CompanyName", "Nattpol Chaisri")
+        .set("CompanyName", "Nattapol Chaisri")
         .set("LegalCopyright", "Copyright (c) the CadKub authors. MIT OR Apache-2.0.")
         .set("OriginalFilename", "cadkub.exe")
         .set("InternalName", "cadkub");

@@ -131,7 +131,7 @@ cadkub-cli convert drawing.dxf drawing.svg
 ## สัญญาอนุญาตและเครดิต
 
 CadKub ใช้สัญญาอนุญาตคู่ [MIT](LICENSE-MIT) หรือ [Apache-2.0](LICENSE-APACHE) เลือกได้ตามต้องการ
-Copyright (c) 2026 Nattpol Chaisri and the CadKub contributors
+Copyright (c) 2026 Nattapol Chaisri and the CadKub contributors
 
 พัฒนาต่อจาก [CADCraft](https://github.com/storytold/cadcraft),
 Copyright (c) 2026 ArtCraft Team and the CADCraft contributors ข้อความที่ต้องแสดงอยู่ใน [NOTICE](NOTICE)

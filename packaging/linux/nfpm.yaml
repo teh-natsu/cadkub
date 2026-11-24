@@ -13,7 +13,7 @@ release: 1
 section: graphics
 priority: optional
 maintainer: ${CADKUB_MAINTAINER}
-vendor: Nattpol Chaisri
+vendor: Nattapol Chaisri
 homepage: https://github.com/teh-natsu/cadkub
 license: MIT OR Apache-2.0
 description: |-
